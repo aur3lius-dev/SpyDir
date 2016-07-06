@@ -225,7 +225,7 @@ class Config():
                     if self.restrict_ext:
                         if len(ext) > 0:
                             if ext.strip().upper() in self.config.get("Extension Whitelist"):
-                                #self._callbacks.printOutput("%s:%s" % (ext, str(self.config.get("Extension Whitelist"))))
+                                # self._callbacks.printOutput("%s:%s" % (ext, str(self.config.get("Extension Whitelist"))))
                                 file_set.add(file_url)
                     else:
                         file_set.add(file_url)
@@ -514,7 +514,7 @@ class Compare():
                 self.in_map = load(in_file)
         except Exception as exc:
             self._callbacks.printOutput("Exception: %s" % str(exc))
-        self._callbacks.printOutput("Import complete: %s" % self.in_map)
+        self._callbacks.printOutput("Import complete!"  # %s" % self.in_map)
 
     def compare_maps(self, s_map):
         """
