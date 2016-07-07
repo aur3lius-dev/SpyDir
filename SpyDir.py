@@ -292,9 +292,10 @@ class Config():
         """
         updates the view_port_text with the new information
         """
-        temp = self.view_port_text.getText()
-        self.view_port_text.setText("%s\n%s" % (temp, text))
-        self.status_field.setViewportView(self.view_port_text)
+        temp = self.view_port_text.getText().strip()
+        if text not in temp:
+            self.view_port_text.setText("%s\n%s" % (temp, text))
+            self.status_field.setViewportView(self.view_port_text)
 
     @staticmethod
     def getTabCaption():  # pylint: disable= invalid-name
@@ -302,6 +303,7 @@ class Config():
         Returns the name of the Burp Suite Tab
         """
         return "Config"
+
     def getUiComponent(self):  # pylint: disable= invalid-name
         """
         Returns the UI component for the Burp Suite tab
@@ -514,7 +516,7 @@ class Compare():
                 self.in_map = load(in_file)
         except Exception as exc:
             self._callbacks.printOutput("Exception: %s" % str(exc))
-        self._callbacks.printOutput("Import complete!"  # %s" % self.in_map)
+        self._callbacks.printOutput("Import complete!")  # %s" % self.in_map)
 
     def compare_maps(self, s_map):
         """
