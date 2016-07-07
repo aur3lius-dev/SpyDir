@@ -11,7 +11,8 @@ from javax.swing import (JMenuItem, JPanel, JTextField, GroupLayout, JTabbedPane
                          JButton, JLabel, JScrollPane, JTextArea, BorderFactory,
                          JFileChooser, JCheckBox)
 from java.net import URL  # pylint: disable=import-error
-from java.awt import GridLayout, Dimension, GridBagLayout, GridBagConstraints, Color  # pylint: disable=import-error
+from java.awt import GridLayout, Dimension, GridBagLayout, GridBagConstraints, Color, Toolkit  # pylint: disable=import-error
+from java.awt.event import ComponentListener
 
 from os import walk, path, getcwd
 from json import load, dump, dumps
@@ -30,12 +31,7 @@ class BurpExtender(IBurpExtender, IBurpExtenderCallbacks):
         Default extension method. the objects within are related to the internal tabs
         of the extension
         """
-        config = Config(callbacks)
-        comp = Compare(callbacks, config)
-        about = About(callbacks)
-        configurables = [config, comp, about]
-        config_tab = SpyTab(configurables)
-
+        config_tab = SpyTab(callbacks)
         # callbacks.customizeUiComponent(config_tab)
         callbacks.addSuiteTab(config_tab)
 
@@ -44,17 +40,22 @@ class SpyTab(JPanel, ITab):
     """
     Defines the extension tabs
     """
-    def __init__(self, tabs):
+    def __init__(self, callbacks):
         super(SpyTab, self).__init__(GroupLayout(self))
-        self.build_ui(tabs)
+        self._callbacks = callbacks
+        config = Config(self._callbacks, self)
+        comp = Compare(self._callbacks, config, self)
+        about = About(self._callbacks, self)
+        self.tabs = [config, comp, about]
+        self.build_ui()
 
-    def build_ui(self, tabs):
+    def build_ui(self):
         """
         Builds the tabbed pane within the main extension tab
         Tabs are Config, Compare, and About objects
         """
         ui_tab = JTabbedPane()
-        for tab in tabs:
+        for tab in self.tabs:
             ui_tab.add(tab.getTabCaption(), tab.getUiComponent())
         main_box = Box.createVerticalBox()
         main_box.add(ui_tab)
@@ -74,41 +75,45 @@ class SpyTab(JPanel, ITab):
         """
         return self
 
-class Config():
+class Config(ITab):
     """
     Defines the Configuration tab
     """
-    def __init__(self, callbacks):
+    def __init__(self, callbacks, parent):
+        # Initialze self stuff
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
         self.config = {}
         self.restrict_ext = False
         self.url_reqs = []
         self.parse_files = False
-
         self.tab = JPanel(GridLayout(3, 1))
-        # self.tab.setPreferredSize(self.tab.getPreferredSize())
-        lower_row = JPanel(GridLayout(1, 1))
-        lower_row.setPreferredSize(lower_row.getPreferredSize())
-        upper_row = JPanel(GridLayout(1, 2))
-        labels = JPanel(GridLayout(10, 2))
-        # self.fields = JPanel(GridLayout(8,1))
         self.view_port_text = JTextArea("===SpyDir===")
         self.status_field = JScrollPane(self.view_port_text)
-
         self.dir = JTextField(60)
         self.delim = JTextField(30)
         self.ext_white_list = JTextField(30)
-        self.url = JTextField(60)
         # I'm not sure if these fields are necessary still
         # why not just use Burp func to handle this?
         self.cookies = JTextField(60)
         self.headers = JTextField(30)
         self.restore_conf = JTextField("SpyDir.conf")
+        self.url = JTextField(60)
+        self.parent_window = parent
 
+        # Initialize local stuff
+        lower_row = JPanel(GridLayout(1, 1))
+        upper_row = JPanel(GridLayout(1, 2))
+        labels = JPanel(GridLayout(10, 2))
+
+        # Sizing stuff
+        # lower_row.setPreferredSize(lower_row.getPreferredSize())
+        # upper_row.setPreferredSize(upper_row.getPreferredSize())
+
+        # Configure view port
         self.view_port_text.setEditable(False)
-        # self.restore_conf.setColumns(2)
 
+        # Build grid
         labels.add(JLabel("Input Directory:"))
         labels.add(self.dir)
         labels.add(JLabel("String Delimiter:"))
@@ -127,17 +132,21 @@ class Config():
         labels.add(self.restore_conf)
         labels.add(JCheckBox("Attempt to Parse Files for URL patterns?",
                              False, actionPerformed=self.set_parse))
+        labels.add(JButton("Specify plugins location", actionPerformed=self.set_plugin_loc))
         labels.add(JButton("Parse Directory", actionPerformed=self.parse))
         labels.add(JButton("Send to Spider", actionPerformed=self.scan))
 
+        # Add things to rows
         upper_row.add(labels)
-        # upper_row.add(self.fields)
         lower_row.add(self.status_field)
         self.tab.add(upper_row)
         self.tab.add(lower_row)
         self._callbacks.customizeUiComponent(self.tab)
-        # self._callbacks.printOutput(getcwd())
-        self._plugin_parse()
+
+    def _resize(self):
+        if self.parent_window is not None:
+            self.tab.setPreferredSize(self.parent_window.getSize())
+            self._callbacks.printOutput("Resized tab: %r" % self.tab.getPreferredSize())
 
     def set_parse(self, event):  # pylint: disable=unused-argument
         """
@@ -163,9 +172,11 @@ class Config():
         self.dir.setText(jdump.get("Input Directory"))
         self.headers.setText(jdump.get("Headers"))
 
-        self.save(None)
+        self._callbacks.printOutput("Parent size %r" % self.parent_window.getSize())
+        self.save()
+        self._resize()
 
-    def save(self, event):  # pylint: disable=unused-argument
+    def save(self, event=None):  # pylint: disable=unused-argument
         """
         Writes out the configuration details to a specified file.
         """
@@ -200,7 +211,7 @@ class Config():
         Attempts to parse the given directory (and/or source files) for url endpoints
         Saves the items found within the url_reqs list
         """
-        self.save(None)
+        self.save()
 
         file_set = set()
         fcount = 0
@@ -222,21 +233,17 @@ class Config():
                         self._callbacks.printError("Exception parsing:\t%s" % dirname)
                         self._callbacks.printError(str(exc))
                         self._callbacks.printError(str(filename))
-                    if self.restrict_ext:
-                        if len(ext) > 0:
-                            if ext.strip().upper() in self.config.get("Extension Whitelist"):
-                                # self._callbacks.printOutput("%s:%s" % (ext, str(self.config.get("Extension Whitelist"))))
-                                file_set.add(file_url)
+                    if self.restrict_ext and len(ext) > 0 and ext.strip().upper() in self.config.get("Extension Whitelist"):
+                        # self._callbacks.printOutput("%s:%s" % (ext, str(self.config.get("Extension Whitelist"))))
+                        file_set.add(file_url)
                     else:
                         file_set.add(file_url)
                 else:
                     # i can haz threading?
-                    for plug in self.plugins:
-                        res = plug.run(filename)
-                        if res is not None:
-                            for i in res:
-                                i = file_url + i
-                                file_set.add(i)
+                    if self.restrict_ext and len(ext) > 0 and ext.strip().upper() in self.config.get("Extension Whitelist"):
+                        file_set.update(self.parse_file(filename, file_url))
+                    else:
+                        file_set.update(self.parse_file(filename, file_url))
 
         for item in file_set:
             self.url_reqs.append(item)
@@ -253,17 +260,41 @@ class Config():
 
         # self.update_scroll(str(dumps(self.config))) # DEBUG
 
-    # Should there be a plugins dir config item?
+    def parse_file(self, filename, file_url):
+        """
+        Attempts to parse a file with the loaded plugins returns set of endpoints
+        """
+        file_set = set()
+        for plug in self.plugins:
+            res = plug.run(filename)
+            if res is not None:
+                for i in res:
+                    i = file_url + i
+                    file_set.add(i)
+        return file_set
 
-    def _plugin_parse(self):
+    def set_plugin_loc(self, event):  # pylint: disable= unused-argument
+        """
+        Attempts to load plugins from a specified location
+        """
+        choose_plugin_location = JFileChooser()
+        choose_plugin_location.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY)
+        choose_plugin_location.showDialog(self.tab, "Choose Folder")
+        chosen_folder = choose_plugin_location.getSelectedFile()
+        filename = chosen_folder.getAbsolutePath()
+        self._callbacks.printOutput("Attempting to load plugins from: %s" % filename)
+        self._plugin_parse(filename)
+        self._callbacks.printOutput("Plugins loaded!")  # %s" % self.in_map)
+
+    def _plugin_parse(self, folder):
         """
         Parses a local directory to get the plugins related to code level scanning
         """
         self.plugins = []
-        for _, _, filenames in walk(getcwd() + "/plugins"):
+        for _, _, filenames in walk(folder):
             for plug in filenames:
                 if path.splitext(plug)[1] == ".py":
-                    lsource = "%s/%s/%s" % (getcwd(), "plugins", plug)
+                    lsource = "%s/%s" % (folder, plug)
                     try:
                         loaded_plug = load_source(plug, lsource)
                         self._callbacks.printOutput("%s loaded!" % loaded_plug.get_name())
@@ -311,26 +342,29 @@ class Config():
         return self.tab
 
 
-class Compare():
+class Compare(ITab):
     '''
     Compare tab in extension. Upon inclusion of 2 sitemaps,
     provides the ability to identify *simple* shared results.
     More complexity = TODO
     '''
-    def __init__(self, callbacks, config):
+    def __init__(self, callbacks, config, parent):
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
-        # self.tk = Toolkit.getDefaultToolkit()
+        tk = Toolkit.getDefaultToolkit()
         self.conf = config
         self.chosen_import_file = None
         self.in_map = None
+        self.parent_window = parent
 
-        # x_size = self.tk.getScreenSize().getWidth()
-        # y_size = self.tk.getScreenSize().getHeight()
+        x_size = tk.getScreenSize().getWidth()
+        y_size = tk.getScreenSize().getHeight()
 
         self.tab = JPanel(GridBagLayout())
-        self.tab.setMaximumSize(self.tab.getPreferredSize())
+        #self.tab.setPreferredSize(self.tab.getPreferredSize())
         tab_constraints = GridBagConstraints()
+
+        self._callbacks.printOutput("Screen Size %sx%s" % (x_size, y_size))
 
         # Top row config
         self.top_row = JPanel(GridBagLayout())
@@ -348,7 +382,7 @@ class Compare():
         self.top_row.add(JButton("Import Site map",
                                  actionPerformed=self.import_sitemap),
                          tab_constraints)
-        self.top_row.setPreferredSize(self.top_row.getPreferredSize())
+        # self.top_row.setPreferredSize(self.top_row.getPreferredSize())
         # self.top_row.setBorder(BorderFactory.createLineBorder(Color.black))
 
         tab_constraints.gridx = 0
@@ -360,7 +394,7 @@ class Compare():
 
         # Bottom row config
         bottom_row = JPanel(GridBagLayout())
-        bottom_row.setPreferredSize(bottom_row.getMaximumSize())
+        # bottom_row.setPreferredSize(bottom_row.getMaximumSize())
         # bottom_row.setBorder(BorderFactory.createLineBorder(Color.black))
 
         # self.leftColumn = JPanel(GridBagLayout())
@@ -438,6 +472,11 @@ class Compare():
         self.tab.add(bottom_row, tab_constraints)
         self._callbacks.customizeUiComponent(self.tab)
 
+    def _resize(self):
+        if self.parent_window is not None:
+            self.tab.setPreferredSize(self.parent_window.getSize())
+            self._callbacks.printOutput("Resized tab: %r" % self.tab.getPreferredSize())
+
     def refresh(self, event):  # pylint: disable= unused-argument
         """
         Attempts to refresh the Compare tab items.
@@ -446,6 +485,9 @@ class Compare():
         url = self.conf.url.getText()
         urls = self._callbacks.getSiteMap(url)
         s_map = self.handle_sitemap(urls)
+        self._callbacks.printOutput("Tab preferred size: %r" % self.tab.getPreferredSize())
+        self._callbacks.printOutput("Actual size %r" % self.tab.getSize())
+
 
         # self._callbacks.printOutput(str(self.tab.getSize()))
         # self._callbacks.printOutput(str(self.left_results.getSize()))
@@ -467,6 +509,8 @@ class Compare():
                 self.update_scroll(self.right_text, self.right_results,
                                    str(dumps(results['in_map'][codes], sort_keys=True, indent=4)))
             self._callbacks.printOutput("Page refreshed!")
+
+        self._resize()
 
     @staticmethod
     def update_scroll(text_area, scroll_pane, text):
@@ -585,11 +629,11 @@ class Compare():
         return self.tab
 
 
-class About():
+class About(ITab):
     """
     Defines the About tab
     """
-    def __init__(self, callbacks):
+    def __init__(self, callbacks, parent):
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
         self.tab = JPanel(GridLayout(7, 1))
