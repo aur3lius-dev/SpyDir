@@ -44,30 +44,35 @@ class SpyTab(JPanel, ITab):
         super(SpyTab, self).__init__(GroupLayout(self))
         self._callbacks = callbacks
         config = Config(self._callbacks, self)
-        comp = Compare(self._callbacks, config, self)
         about = About(self._callbacks, self)
-        self.tabs = [config, comp, about]
-        self.build_ui()
+        self.tabs = [config, about]
+        self.j_tabs = self.build_ui()
+        self.add(self.j_tabs)
 
     def build_ui(self):
         """
         Builds the tabbed pane within the main extension tab
-        Tabs are Config, Compare, and About objects
+        Tabs are Config and About objects
         """
         ui_tab = JTabbedPane()
         for tab in self.tabs:
             ui_tab.add(tab.getTabCaption(), tab.getUiComponent())
-        main_box = Box.createVerticalBox()
-        main_box.add(ui_tab)
-        main_box.add(Box.createVerticalGlue())
-        self.add(main_box)
+        return ui_tab
+
+    def switch_focus(self):
+        """
+        Terrifically hacked together refresh mechanism
+        """
+        self.j_tabs.setSelectedIndex(1)
+        self.j_tabs.setSelectedIndex(0)
+        
 
     @staticmethod
     def getTabCaption():  # pylint: disable=invalid-name
         """
         Returns the tab name for the Burp UI
         """
-        return "!APlaceholder"
+        return "SpyDir"
 
     def getUiComponent(self):  # pylint: disable= invalid-name
         """
@@ -87,31 +92,27 @@ class Config(ITab):
         self.restrict_ext = False
         self.url_reqs = []
         self.parse_files = False
-        self.tab = JPanel(GridLayout(3, 1))
+        self.tab = JPanel(GridBagLayout())
         self.view_port_text = JTextArea("===SpyDir===")
         self.status_field = JScrollPane(self.view_port_text)
-        self.dir = JTextField(60)
+        self.dir = JTextField(30)
         self.delim = JTextField(30)
         self.ext_white_list = JTextField(30)
         # I'm not sure if these fields are necessary still
         # why not just use Burp func to handle this?
-        self.cookies = JTextField(60)
+        self.cookies = JTextField(30)
         self.headers = JTextField(30)
         self.restore_conf = JTextField("SpyDir.conf")
-        self.url = JTextField(60)
+        self.url = JTextField(30)
         self.parent_window = parent
 
         # Initialize local stuff
-        lower_row = JPanel(GridLayout(1, 1))
-        upper_row = JPanel(GridLayout(1, 2))
-        labels = JPanel(GridLayout(10, 2))
-
-        # Sizing stuff
-        # lower_row.setPreferredSize(lower_row.getPreferredSize())
-        # upper_row.setPreferredSize(upper_row.getPreferredSize())
+        tab_constraints = GridBagConstraints()
+        labels = JPanel(GridLayout(20, 1))
 
         # Configure view port
         self.view_port_text.setEditable(False)
+        # self.status_field.setPreferredSize(self.status_field.getPreferredSize())
 
         # Build grid
         labels.add(JLabel("Input Directory:"))
@@ -135,19 +136,37 @@ class Config(ITab):
         labels.add(JButton("Specify plugins location", actionPerformed=self.set_plugin_loc))
         labels.add(JButton("Parse Directory", actionPerformed=self.parse))
         labels.add(JButton("Send to Spider", actionPerformed=self.scan))
+        # labels.setBorder(BorderFactory.createLineBorder(Color.black))
 
         # Add things to rows
-        upper_row.add(labels)
-        lower_row.add(self.status_field)
-        self.tab.add(upper_row)
-        self.tab.add(lower_row)
+        tab_constraints.anchor = GridBagConstraints.FIRST_LINE_END
+        tab_constraints.gridx = 1
+        tab_constraints.gridy = 0
+        tab_constraints.fill = GridBagConstraints.HORIZONTAL
+        self.tab.add(JButton("Resize screen", actionPerformed=self._resize), tab_constraints)
+        tab_constraints.gridx = 0
+        tab_constraints.gridy = 1
+        tab_constraints.anchor = GridBagConstraints.FIRST_LINE_START
+        self.tab.add(labels, tab_constraints)
+
+        tab_constraints.gridx = 1
+        tab_constraints.gridy = 1
+        tab_constraints.fill = GridBagConstraints.BOTH
+        tab_constraints.weightx = 1.0
+        tab_constraints.weighty = 1.0
+        
+        tab_constraints.anchor = GridBagConstraints.FIRST_LINE_END
+        self.tab.add(self.status_field, tab_constraints)
         self._callbacks.customizeUiComponent(self.tab)
 
-    def _resize(self):
+    def _resize(self, event):
         if self.parent_window is not None:
-            self.tab.setPreferredSize(self.parent_window.getSize())
-            self._callbacks.printOutput("Resized tab: %r" % self.tab.getPreferredSize())
-
+            par_size = self.parent_window.getSize()
+            par_size.setSize(par_size.getWidth()*.99, par_size.getHeight()*.9)
+            self.tab.setPreferredSize(par_size)
+            self.parent_window.validate()
+            self.parent_window.switch_focus()
+            
     def set_parse(self, event):  # pylint: disable=unused-argument
         """
         Handles the click event from the UI checkbox to attempt code level parsing
@@ -171,10 +190,8 @@ class Config(ITab):
         self.delim.setText(jdump.get('String Delimiter'))
         self.dir.setText(jdump.get("Input Directory"))
         self.headers.setText(jdump.get("Headers"))
-
-        self._callbacks.printOutput("Parent size %r" % self.parent_window.getSize())
+        # self._callbacks.printOutput("Parent size %r" % self.parent_window.getSize())
         self.save()
-        self._resize()
 
     def save(self, event=None):  # pylint: disable=unused-argument
         """
@@ -342,293 +359,6 @@ class Config(ITab):
         return self.tab
 
 
-class Compare(ITab):
-    '''
-    Compare tab in extension. Upon inclusion of 2 sitemaps,
-    provides the ability to identify *simple* shared results.
-    More complexity = TODO
-    '''
-    def __init__(self, callbacks, config, parent):
-        self._callbacks = callbacks
-        self._helpers = callbacks.getHelpers()
-        tk = Toolkit.getDefaultToolkit()
-        self.conf = config
-        self.chosen_import_file = None
-        self.in_map = None
-        self.parent_window = parent
-
-        x_size = tk.getScreenSize().getWidth()
-        y_size = tk.getScreenSize().getHeight()
-
-        self.tab = JPanel(GridBagLayout())
-        #self.tab.setPreferredSize(self.tab.getPreferredSize())
-        tab_constraints = GridBagConstraints()
-
-        self._callbacks.printOutput("Screen Size %sx%s" % (x_size, y_size))
-
-        # Top row config
-        self.top_row = JPanel(GridBagLayout())
-        # self.top_row.setPreferredSize(Dimension(145, 30))
-        # self._callbacks.printOutput(str(self.top_row.getSize()))
-        tab_constraints.gridx = 0
-        self.top_row.add(JButton("Refresh",
-                                 actionPerformed=self.refresh),
-                         tab_constraints)
-        tab_constraints.gridx = 1
-        self.top_row.add(JButton("Export Site map",
-                                 actionPerformed=self.export_sitemap),
-                         tab_constraints)
-        tab_constraints.gridx = 2
-        self.top_row.add(JButton("Import Site map",
-                                 actionPerformed=self.import_sitemap),
-                         tab_constraints)
-        # self.top_row.setPreferredSize(self.top_row.getPreferredSize())
-        # self.top_row.setBorder(BorderFactory.createLineBorder(Color.black))
-
-        tab_constraints.gridx = 0
-        tab_constraints.gridy = 0
-        tab_constraints.anchor = GridBagConstraints.NORTH
-
-        self.tab.add(self.top_row, tab_constraints)
-
-
-        # Bottom row config
-        bottom_row = JPanel(GridBagLayout())
-        # bottom_row.setPreferredSize(bottom_row.getMaximumSize())
-        # bottom_row.setBorder(BorderFactory.createLineBorder(Color.black))
-
-        # self.leftColumn = JPanel(GridBagLayout())
-        # self.middleColumn = JPanel(GridBagLayout())
-        # self.rightColumn = JPanel(GridBagLayout())
-
-
-        # Left side
-        # self.left_panel = JPanel()
-        self.left_text = JTextArea("")
-        self.left_text.setEditable(False)
-        self.left_results = JScrollPane(self.left_text)
-        # self.left_results.setPreferredSize(self.left_results.getPreferredSize())
-        # self.left_results.setMaximumSize(Dimension())
-        left_label = JLabel("Results #1")
-
-        # Middle pane
-        self.middle_text = JTextArea("")
-        self.middle_text.setEditable(False)
-        self.middle_results = JScrollPane(self.middle_text)
-        middle_label = JLabel("Shared Results")
-
-        # Right side
-        self.right_text = JTextArea("")
-        self.right_text.setEditable(False)
-        self.right_results = JScrollPane(self.right_text)
-        right_label = JLabel("Results #2")
-
-        # Add labels to bottom_row
-
-        # Top left
-        tab_constraints.gridx = 0
-        tab_constraints.gridy = 0
-        tab_constraints.fill = GridBagConstraints.HORIZONTAL
-        bottom_row.add(left_label, tab_constraints)
-        # Top Middle
-        tab_constraints.gridx = 1
-        tab_constraints.gridy = 0
-        #tab_constraints.fill = GridBagConstraints.HORIZONTAL
-        bottom_row.add(middle_label, tab_constraints)
-        # Top Right
-        tab_constraints.gridx = 2
-        tab_constraints.gridy = 0
-        # tab_constraints.fill = GridBagConstraints.HORIZONTAL
-        bottom_row.add(right_label, tab_constraints)
-
-        # Add result windows to bottom_row
-
-        # Bottom left
-        tab_constraints.gridx = 0
-        tab_constraints.gridy = 1
-        tab_constraints.ipadx = 320
-        tab_constraints.ipady = 400
-        tab_constraints.fill = GridBagConstraints.BOTH
-        bottom_row.add(self.left_results, tab_constraints)
-
-        # Bottom middle
-        tab_constraints.gridx = 1
-        tab_constraints.gridy = 1
-        # tab_constraints.fill = GridBagConstraints.BOTH
-        bottom_row.add(self.middle_results, tab_constraints)
-
-
-        # Bottom right
-        tab_constraints.gridx = 2
-        tab_constraints.gridy = 1
-        bottom_row.add(self.right_results, tab_constraints)
-
-        tab_constraints.gridx = 0
-        tab_constraints.gridy = 1
-        tab_constraints.weighty = 1.0
-        tab_constraints.weightx = 1.0
-        tab_constraints.fill = GridBagConstraints.BOTH
-
-        self.tab.add(bottom_row, tab_constraints)
-        self._callbacks.customizeUiComponent(self.tab)
-
-    def _resize(self):
-        if self.parent_window is not None:
-            self.tab.setPreferredSize(self.parent_window.getSize())
-            self._callbacks.printOutput("Resized tab: %r" % self.tab.getPreferredSize())
-
-    def refresh(self, event):  # pylint: disable= unused-argument
-        """
-        Attempts to refresh the Compare tab items.
-        Uses the url from the the Config tab as the 1st sitemap
-        """
-        url = self.conf.url.getText()
-        urls = self._callbacks.getSiteMap(url)
-        s_map = self.handle_sitemap(urls)
-        self._callbacks.printOutput("Tab preferred size: %r" % self.tab.getPreferredSize())
-        self._callbacks.printOutput("Actual size %r" % self.tab.getSize())
-
-
-        # self._callbacks.printOutput(str(self.tab.getSize()))
-        # self._callbacks.printOutput(str(self.left_results.getSize()))
-
-        if self.chosen_import_file is not None:
-            self._callbacks.printOutput("Attempting to compare sitemaps")
-            results = self.compare_maps(s_map)
-
-            for codes in results['s_map']:
-                self.update_scroll(self.left_text, self.left_results, codes)
-                self.update_scroll(self.left_text, self.left_results,
-                                   str(dumps(results['s_map'][codes], sort_keys=True, indent=4)))
-            for codes in results['shared']:
-                self.update_scroll(self.middle_text, self.middle_results, codes)
-                self.update_scroll(self.middle_text, self.middle_results,
-                                   str(dumps(results['shared'][codes], sort_keys=True, indent=4)))
-            for codes in results['in_map']:
-                self.update_scroll(self.right_text, self.right_results, codes)
-                self.update_scroll(self.right_text, self.right_results,
-                                   str(dumps(results['in_map'][codes], sort_keys=True, indent=4)))
-            self._callbacks.printOutput("Page refreshed!")
-
-        self._resize()
-
-    @staticmethod
-    def update_scroll(text_area, scroll_pane, text):
-        """
-        Updates a given scroll_pane object with new text
-        """
-        temp = text_area.getText().strip()
-        if text not in temp:
-            text_area.setText("%s\n%s" % (temp, text))
-            scroll_pane.setViewportView(text_area)
-
-    def handle_sitemap(self, site_map):
-        """
-        Processes the site_map from burp to extract relevant information
-        Returns dict of { Response code: [url] }
-        """
-        resources = {}
-        for site in site_map:
-            response = site.getResponse()
-            if response is not None:
-                response = self._helpers.bytesToString(response)
-                host = site.getHttpService().getHost()
-                port = site.getHttpService().getPort()
-                proto = site.getHttpService().getProtocol()
-                request = self._helpers.bytesToString(site.getRequest())
-                uri = request.split("HTTP")[0].split("/", 1)[1]
-                resp_code = str(response.split("HTTP/1.1 ")[1].split(" ")[0])
-                url = "%s://%s:%s/%s" %(proto, host, port, uri)
-                # self._callbacks.printOutput("request: %s\turi: %s" %(request, uri))
-                if resp_code in resources:
-                    resources[resp_code].append(url)
-                else:
-                    resources.update({resp_code: [url]})
-        return resources
-
-    def import_sitemap(self, event):  # pylint: disable= unused-argument
-        """
-        Attempts to import information from previously exported sitemap
-        """
-        choose_import_file = JFileChooser()
-        choose_import_file.showDialog(self.top_row, "Choose File")
-        self.chosen_import_file = choose_import_file.getSelectedFile()
-        filename = self.chosen_import_file.getAbsolutePath()
-        self._callbacks.printOutput("Attempting to import filename: %s" % filename)
-        try:
-            with open(filename) as in_file:
-                self.in_map = load(in_file)
-        except Exception as exc:
-            self._callbacks.printOutput("Exception: %s" % str(exc))
-        self._callbacks.printOutput("Import complete!")  # %s" % self.in_map)
-
-    def compare_maps(self, s_map):
-        """
-        Compares the sitemaps to determine similar/distinct items from each
-        Returns a dictionary object of shared values and separately distinct values
-        """
-        comp_results = {
-            "s_map": {},
-            "shared": {},
-            "in_map": {}
-            }
-        for response_code in s_map:
-            s_map_urls = s_map.get(response_code, [])
-            in_map_urls = self.in_map.get(response_code, [])
-            for url in s_map_urls:
-                if url in in_map_urls:
-                    if response_code in comp_results['shared']:
-                        comp_results['shared'].get(response_code).append(url)
-                    else:
-                        comp_results['shared'].update({response_code: [url]})
-                else:
-                    if response_code in comp_results['s_map']:
-                        comp_results['s_map'].get(response_code).append(url)
-                    else:
-                        comp_results['s_map'].update({response_code: [url]})
-        for response_code in self.in_map:
-            s_map_urls = s_map.get(response_code, [])
-            in_map_urls = self.in_map.get(response_code, [])
-            for url in in_map_urls:
-                if url not in comp_results['shared'].get(response_code, ""):
-                    if response_code in comp_results['in_map']:
-                        comp_results['in_map'].get(response_code).append(url)
-                    else:
-                        comp_results['in_map'].update({response_code: [url]})
-        return comp_results
-
-    def export_sitemap(self, event):  # pylint: disable= unused-argument
-        """
-        Writes the sitemap for the URL specified in the Config tab to a file in JSON format
-        """
-        choose_export_file = JFileChooser()
-        choose_export_file.showDialog(self.top_row, "Choose File")
-
-        filename = choose_export_file.getSelectedFile().getAbsolutePath()
-        self._callbacks.printOutput("Export Sitemap Filename: %s" % str(filename))
-        url = self.conf.url.getText()
-        output = self._callbacks.getSiteMap(url)
-        self._callbacks.printOutput("Printing Sitemap for: %s" % url)
-        try:
-            with open(filename, 'w') as out_file:
-                dump(self.handle_sitemap(output), out_file)
-        except Exception as exc:
-            self._callbacks.printOutput("Exception: %s" % str(exc))
-        self._callbacks.printOutput("Print complete")
-
-    @staticmethod
-    def getTabCaption():  # pylint: disable= invalid-name
-        """
-        Returns name of tab for Burp UI
-        """
-        return "Compare"
-    def getUiComponent(self):  # pylint: disable= invalid-name
-        """
-        Returns UI component for Burp UI
-        """
-        return self.tab
-
-
 class About(ITab):
     """
     Defines the About tab
@@ -636,7 +366,36 @@ class About(ITab):
     def __init__(self, callbacks, parent):
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
-        self.tab = JPanel(GridLayout(7, 1))
+        self.tab = JPanel(GridBagLayout())
+        self.version = "0.8.0"
+
+        about_constraints = GridBagConstraints()
+
+        about = "<html><center><h2>SpyDir</h2>Created By: <em>Ryan Reid</em> (@_aur3lius)<br/>Version: %s</center><br/>" % self.version
+        getting_started = """
+        <html><em>
+        SpyDir is an extension that assists in the enumeration of application<br/>
+        endpoints via an input directory containing the application's<br/>
+        source code. It provides an option to process files as endpoints,<br/>
+        think: ASP, PHP, HTML, or parse files to attempt to enumerate<br/>
+        endpoints via plugins, think: MVC. Users may opt to send<br/>
+        the discovered endpoints directly to the Burp Spider.</em><br/><br/>
+         <b>Getting started:</b><br/>
+         <ul>
+            <li>Add a local source repository</li>
+            <li>Add the target URL</li>
+            <li>Use the String delimiter to construct the appropriate directory path (if necessary)</li>
+            <li>Alternatively, parse each file by selecting plugins and checking the checkbox</li>
+            <li>Explicitly define the file extensions to process</li>
+            <li>Parse the directory</li>
+            <li>Verify output is correct <b>before</b> sending to spider</li>
+            <li>Send requests to the Burp Spider</li>
+        </ul></html>
+        """
+        about_constraints.anchor = GridBagConstraints.FIRST_LINE_START
+        about_constraints.weightx = 1.0
+        about_constraints.weighty = 1.0
+        self.tab.add(JLabel("%s\n%s" % (about, getting_started)), about_constraints)
 
     @staticmethod
     def getTabCaption():  # pylint: disable= invalid-name
