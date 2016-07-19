@@ -4,8 +4,8 @@ The purpose of the SpyDir tool is to extend the functionality of BurpSuite Proxy
 ## Plugins
 Plugin requirements:
 
-* Have a get_name() function that returns a string with the title of the plugin. 
-* Have a run() function that accepts a string filename. Return a list, [], of endpoints. 
+* Have a `get_name()` function that returns a string with the title of the plugin. 
+* Have a `run()` function that accepts a string filename. Return a `list`, `[]`, of endpoints. 
 
 ## Requirements
 Jython2.7+ stand-alone jar file. Get it here: http://www.jython.org/downloads.html
