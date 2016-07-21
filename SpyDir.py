@@ -1,42 +1,56 @@
 """
 Module contains classes related to Burp Suite extension
 """
-from burp import IBurpExtender, IBurpExtenderCallbacks, ITab
+from burp import (IBurpExtender, IBurpExtenderCallbacks, ITab,
+                  IContextMenuFactory)
 
 from javax.swing import (JPanel, JTextField, GroupLayout, JTabbedPane,
                          JButton, JLabel, JScrollPane, JTextArea,
-                         JFileChooser, JCheckBox)
+                         JFileChooser, JCheckBox, JMenuItem)
 from java.net import URL
 from java.awt import GridLayout, GridBagLayout, GridBagConstraints
 
 from os import walk, path
 from json import load, dump, dumps
 from imp import load_source
-# Unused imports
-# from burp import IContextMenuFactory
-# from java.awt import Toolkit, Dimension, Color
-# from java.awt.event import ComponentListener
-# from java.swing import Box, JMenuItem, BorderFactory
-# from java.util import ArrayList, List
-# from os import getcwd
 
 
-class BurpExtender(IBurpExtender, IBurpExtenderCallbacks):
-    '''
+class BurpExtender(IBurpExtender, IBurpExtenderCallbacks, IContextMenuFactory):
+    """
     Class contains the necessary function to begin the burp extension.
-    List of things left to implement:
-        Add context menus for URL/cookies
-        Add tooltips?
-        Reflected Parameters GET/POST vs code level params
-    '''
-    @staticmethod
-    def registerExtenderCallbacks(callbacks):
+    """
+    def __init__(self):
+        self.config_tab = None
+        self.messages = []
+        self._callbacks = None
+
+    def registerExtenderCallbacks(self, callbacks):
         """
         Default extension method. the objects within are related
         to the internal tabs of the extension
         """
-        config_tab = SpyTab(callbacks)
-        callbacks.addSuiteTab(config_tab)
+        self.config_tab = SpyTab(callbacks)
+        self._callbacks = callbacks
+        callbacks.addSuiteTab(self.config_tab)
+        callbacks.registerContextMenuFactory(self)
+
+    def createMenuItems(self, invocation):
+        """Creates the Burp Menu items"""
+        context = invocation.getInvocationContext()
+        if context == invocation.CONTEXT_MESSAGE_EDITOR_REQUEST \
+                or context == invocation.CONTEXT_MESSAGE_VIEWER_REQUEST \
+                or context == invocation.CONTEXT_PROXY_HISTORY \
+                or context == invocation.CONTEXT_TARGET_SITE_MAP_TABLE:
+            self.messages = invocation.getSelectedMessages()
+            if len(self.messages) == 1:
+                return [JMenuItem('Send URL to SpyDir',
+                                  actionPerformed=self.pass_url)]
+        else:
+            return None
+
+    def pass_url(self, event):
+        """Handles the menu event"""
+        self.config_tab.update_url(self.messages)
 
 
 class SpyTab(JPanel, ITab):
@@ -65,6 +79,16 @@ class SpyTab(JPanel, ITab):
         """Terrifically hacked together refresh mechanism"""
         self.j_tabs.setSelectedIndex(1)
         self.j_tabs.setSelectedIndex(0)
+
+    def update_url(self, host):
+        """
+        Retrieves the selected host information from the menu click
+        Sends it to the config tab
+        """
+        service = host[0].getHttpService()
+        url = "%s://%s:%s" % (service.getProtocol(), service.getHost(),
+                              service.getPort())
+        self.tabs[0].set_url(url)
 
     @staticmethod
     def getTabCaption():
@@ -139,6 +163,15 @@ class Config(ITab):
     def build_ui(self):
         """Builds the configuration screen"""
         labels = JPanel(GridLayout(21, 1))
+        checkbox = JCheckBox("Attempt to parse files for URL patterns?",
+                             False, actionPerformed=self.set_parse)
+        # The two year old in me is laughing heartily
+        plug_butt = JButton("Specify plugins location",
+                            actionPerformed=self.set_plugin_loc)
+        parse_butt = JButton("Parse directory", actionPerformed=self.parse)
+        clear_butt = JButton("Clear text", actionPerformed=self.clear)
+        spider_butt = JButton("Send to Spider", actionPerformed=self.scan)
+
         # Build grid
         labels.add(JLabel("Input Directory:"))
         labels.add(self.dir)
@@ -153,21 +186,39 @@ class Config(ITab):
         # labels.add(self.cookies)
         # labels.add(JLabel("HTTP Headers:"))
         # labels.add(self.headers)
-        labels.add(JCheckBox("Attempt to Parse Files for URL patterns?",
-                             False, actionPerformed=self.set_parse))
-        labels.add(JButton("Specify plugins location",
-                           actionPerformed=self.set_plugin_loc))
-        labels.add(JButton("Parse directory", actionPerformed=self.parse))
+        labels.add(checkbox)
+        labels.add(plug_butt)
+        labels.add(parse_butt)
         labels.add(JButton("Show all endpoints",
                            actionPerformed=self.print_endpoints))
-        labels.add(JButton("Clear text", actionPerformed=self.clear))
-        labels.add(JButton("Send to Spider", actionPerformed=self.scan))
+        labels.add(clear_butt)
+        labels.add(spider_butt)
         labels.add(JLabel(""))
         labels.add(JLabel("Config file:"))
         labels.add(self.restore_conf)
         labels.add(JButton("Save config", actionPerformed=self.save))
         labels.add(JButton("Restore config", actionPerformed=self.restore))
+        # Tool tips!
+        self.dir.setToolTipText("Enter the full path to the"
+                                " application's source directory")
+        self.delim.setToolTipText("Use to manipulate the final URL. "
+                                  "See About tab for example.")
+        self.ext_white_list.setToolTipText("Define the file"
+                                           " extensions to parse")
+        self.url.setToolTipText("Enter the target URL")
+        self.restore_conf.setToolTipText("Enter the full path to a file "
+                                         "to save/restore SpyDir settings")
+        checkbox.setToolTipText("Parse files line by line using plugins"
+                                " to enumerate language/framework specific"
+                                " endpoints")
+        parse_butt.setToolTipText("Attempt to enumerate application endpoints")
+        clear_butt.setToolTipText("Clear status window")
+        spider_butt.setToolTipText("Process discovered endpoints")
         return labels
+
+    def set_url(self, menu_url):
+        """Changes the configuration URL to the one from the menu event"""
+        self.url.setText(menu_url)
 
     # Event functions
     def set_parse(self, event):
@@ -445,9 +496,9 @@ class About(ITab):
 
         about_constraints = GridBagConstraints()
 
-        about = (("<html><center><h2>SpyDir</h2>Created By:"
-                  "<em>Ryan Reid</em> (@_aur3lius)<br/>Version: "
-                  "%s</center><br/>")
+        about = (("<html><center><h2>SpyDir</h2><b>Version:</b> "
+                  "%s<br/>Created by: <em>Ryan Reid</em> (@_aur3lius)<br/>"
+                  "https://github.com/aur3lius-dev/SpyDir</center><br/>")
                  % self.version)
         getting_started = """
         <html><em><center>
