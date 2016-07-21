@@ -19,6 +19,8 @@ from imp import load_source
 # from java.swing import Box, JMenuItem, BorderFactory
 # from java.util import ArrayList, List
 # from os import getcwd
+
+
 class BurpExtender(IBurpExtender, IBurpExtenderCallbacks):
     '''
     Class contains the necessary function to begin the burp extension.
@@ -30,8 +32,8 @@ class BurpExtender(IBurpExtender, IBurpExtenderCallbacks):
     @staticmethod
     def registerExtenderCallbacks(callbacks):
         """
-        Default extension method. the objects within are related to the internal tabs
-        of the extension
+        Default extension method. the objects within are related
+        to the internal tabs of the extension
         """
         config_tab = SpyTab(callbacks)
         callbacks.addSuiteTab(config_tab)
@@ -39,6 +41,7 @@ class BurpExtender(IBurpExtender, IBurpExtenderCallbacks):
 
 class SpyTab(JPanel, ITab):
     """Defines the extension tabs"""
+
     def __init__(self, callbacks):
         super(SpyTab, self).__init__(GroupLayout(self))
         self._callbacks = callbacks
@@ -72,8 +75,10 @@ class SpyTab(JPanel, ITab):
         """Returns the UI component for the Burp UI"""
         return self
 
+
 class Config(ITab):
     """Defines the Configuration tab"""
+
     def __init__(self, callbacks, parent):
         # Initialze self stuff
         self._callbacks = callbacks
@@ -113,7 +118,9 @@ class Config(ITab):
         tab_constraints.gridx = 1
         tab_constraints.gridy = 0
         tab_constraints.fill = GridBagConstraints.HORIZONTAL
-        self.tab.add(JButton("Resize screen", actionPerformed=self.resize), tab_constraints)
+        self.tab.add(JButton(
+                             "Resize screen", actionPerformed=self.resize),
+                     tab_constraints)
         tab_constraints.gridx = 0
         tab_constraints.gridy = 1
         tab_constraints.anchor = GridBagConstraints.FIRST_LINE_START
@@ -148,9 +155,11 @@ class Config(ITab):
         # labels.add(self.headers)
         labels.add(JCheckBox("Attempt to Parse Files for URL patterns?",
                              False, actionPerformed=self.set_parse))
-        labels.add(JButton("Specify plugins location", actionPerformed=self.set_plugin_loc))
+        labels.add(JButton("Specify plugins location",
+                           actionPerformed=self.set_plugin_loc))
         labels.add(JButton("Parse directory", actionPerformed=self.parse))
-        labels.add(JButton("Show all endpoints", actionPerformed=self.print_endpoints))
+        labels.add(JButton("Show all endpoints",
+                           actionPerformed=self.print_endpoints))
         labels.add(JButton("Clear text", actionPerformed=self.clear))
         labels.add(JButton("Send to Spider", actionPerformed=self.scan))
         labels.add(JLabel(""))
@@ -162,7 +171,10 @@ class Config(ITab):
 
     # Event functions
     def set_parse(self, event):
-        """Handles the click event from the UI checkbox to attempt code level parsing"""
+        """
+        Handles the click event from the UI checkbox
+        to attempt code level parsing
+        """
         self.parse_files = not self.parse_files
         if self.parse_files:
             if not self.loaded_plugins:
@@ -175,7 +187,8 @@ class Config(ITab):
             with open(file_loc) as loc:
                 jdump = load(loc)
         except Exception as exc:
-            self.update_scroll("[!!] Error during restore!\n\tException: %s" % str(exc))
+            self.update_scroll(
+                "[!!] Error during restore!\n\tException: %s" % str(exc))
         if jdump is not None:
             self.url.setText(jdump.get('URL'))
             # self.cookies.setText(jdump.get('Cookies'))
@@ -201,12 +214,14 @@ class Config(ITab):
                 with open(self.restore_conf.getText(), 'w') as out_file:
                     dump(self.config, out_file, sort_keys=True, indent=4)
             except Exception as exc:
-                self.update_scroll("[!!] Error during save!\n\tException: %s" % str(exc))
+                self.update_scroll(
+                    "[!!] Error during save!\n\tException: %s" % str(exc))
 
     def parse(self, event):
         """
         Handles the click event from the UI.
-        Attempts to parse the given directory (and/or source files) for url endpoints
+        Attempts to parse the given directory
+            (and/or source files) for url endpoints
         Saves the items found within the url_reqs list
         """
         self._update()
@@ -214,28 +229,30 @@ class Config(ITab):
         file_set = set()
         fcount = 0
         if self.loaded_plugins:
-            self.update_scroll("[*] Attempting to parse files"
-                               + " for URL patterns. This might take a minute.")
+            self.update_scroll("[*] Attempting to parse files" +
+                               " for URL patterns. This might take a minute.")
         for dirname, _, filenames in walk(self.config.get("Input Directory")):
             for filename in filenames:
                 ext = path.splitext(filename)[1]
                 count = self.config['exts'].get(ext, 0)
                 count += 1
-                self.config['exts'].update({ext:count})
+                self.config['exts'].update({ext: count})
                 fcount += 1
                 file_url = str(self.config.get("URL"))
                 if not self.parse_files:
                     try:
                         file_url += (
                             str(dirname)
-                            .split(self.config.get("String Delimiter"))[1]
-                            + '/' + filename).replace('\\', '/')
+                            .split(self.config.get("String Delimiter"))[1] +
+                            '/' + filename).replace('\\', '/')
                     except Exception as exc:
-                        self.update_scroll("[!!] Error parsing: %s/%s\n\tException:%s"
-                                           % (dirname, filename, str(exc))
-                        self.restrict_ext:
-                        if len(ext) > 0 and (ext.strip().upper()
-                                             in self.config.get("Extension Whitelist")):
+                        self.update_scroll("[!!] Error parsing: " +
+                                           "%s/%s\n\tException:%s"
+                                           % (dirname, filename, str(exc)))
+                    if self.restrict_ext:
+                        if (len(ext) > 0 and
+                            (ext.strip().upper()
+                             in self.config.get("Extension Whitelist"))):
                             file_set.add(file_url)
                     else:
                         file_set.add(file_url)
@@ -244,11 +261,14 @@ class Config(ITab):
                     if self.loaded_plugins:
                         filename = "%s/%s" % (dirname, filename)
                         if self.restrict_ext:
-                            if len(ext) > 0 and (ext.strip().upper()
-                                                 in self.config.get("Extension Whitelist")):
-                                file_set.update(self._parse_file(filename, file_url))
+                            if (len(ext) > 0 and
+                                (ext.strip().upper() in
+                                 self.config.get("Extension Whitelist"))):
+                                file_set.update(
+                                    self._parse_file(filename, file_url))
                         else:
-                            file_set.update(self._parse_file(filename, file_url))
+                            file_set.update(
+                                self._parse_file(filename, file_url))
 
         for item in file_set:
             self.url_reqs.append(item)
@@ -263,14 +283,18 @@ class Config(ITab):
         temp_url = self.url.getText()
         if not self._callbacks.isInScope(URL(temp_url)):
             self._callbacks.sendToSpider(URL(temp_url))
-        self.update_scroll("[*] Sending %d requests to Spider" % len(self.url_reqs))
+        self.update_scroll(
+            "[*] Sending %d requests to Spider" % len(self.url_reqs))
 
         for req in self.url_reqs:
             self._callbacks.sendToSpider(URL(req))
 
     # Plugin functions
     def _parse_file(self, filename, file_url):
-        """Attempts to parse a file with the loaded plugins returns set of endpoints"""
+        """
+        Attempts to parse a file with the loaded plugins
+        Returns set of endpoints
+        """
         file_set = set()
         with open(filename, 'r') as plug_in:
             lines = plug_in.readlines()
@@ -288,14 +312,18 @@ class Config(ITab):
             choose_plugin_location = JFileChooser(self.plugin_folder)
         else:
             choose_plugin_location = JFileChooser()
-        choose_plugin_location.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY)
+        choose_plugin_location.setFileSelectionMode(
+            JFileChooser.DIRECTORIES_ONLY)
         choose_plugin_location.showDialog(self.tab, "Choose Folder")
         chosen_folder = choose_plugin_location.getSelectedFile()
         self.plugin_folder = chosen_folder.getAbsolutePath()
         self._plugin_parse(self.plugin_folder)
 
     def _plugin_parse(self, folder):
-        """Parses a local directory to get the plugins related to code level scanning"""
+        """
+        Parses a local directory to get the plugins
+            related to code level scanning
+        """
         self.plugins = []
         report = ""
         if len(self.plugins) > 0:
@@ -311,8 +339,9 @@ class Config(ITab):
                             report += "%s loaded\n" % loaded_plug.get_name()
                     # One day I'll handle this appropriately
                     except Exception as exc:
-                        self.update_scroll("[!!] Error loading: %s\n\tException: %s"
-                                           % (lsource, str(exc)))
+                        self.update_scroll(
+                            "[!!] Error loading: %s\n\t%s"
+                            % (lsource, str(exc)))
         if len(self.plugins) > 0:
             self.loaded_plugins = True
         else:
@@ -325,8 +354,10 @@ class Config(ITab):
         """Prints the parsed directory status information"""
         if self.parse_files and not self.loaded_plugins:
             self._plugins_missing_warning()
-        self.update_scroll("[*] Found: %r files.\n[*] Found: %r files to be requested.\n"
-                   % (fcount, len(self.url_reqs)))
+        report = (("[*] Found: %r files.\n" +
+                  "[*] Found: %r files to be requested.\n")
+                  % (fcount, len(self.url_reqs)))
+        self.update_scroll(report)
         if len(self.url_reqs) > 0:
             self.update_scroll("[*] Example URL: %s" % self.url_reqs[0])
         if len(self.config.get('exts')) > 0:
@@ -385,7 +416,8 @@ class Config(ITab):
         """Resizes the window to better fit Burp"""
         if self.parent_window is not None:
             par_size = self.parent_window.getSize()
-            par_size.setSize(par_size.getWidth()*.99, par_size.getHeight()*.9)
+            par_size.setSize(par_size.getWidth() * .99,
+                             par_size.getHeight() * .9)
             self.tab.setPreferredSize(par_size)
             self.parent_window.validate()
             self.parent_window.switch_focus()
@@ -403,31 +435,38 @@ class Config(ITab):
 
 class About(ITab):
     """Defines the About tab"""
+
     def __init__(self, callbacks, parent):
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
         self.tab = JPanel(GridBagLayout())
-        self.version = "0.8.1"
+        self.version = "0.8.2"
         self.parent_window = parent
 
         about_constraints = GridBagConstraints()
 
-        about = ("<html><center><h2>SpyDir</h2>Created By:"
-                 "<em>Ryan Reid</em> (@_aur3lius)<br/>Version: %s</center><br/>") % self.version
+        about = (("<html><center><h2>SpyDir</h2>Created By:"
+                  "<em>Ryan Reid</em> (@_aur3lius)<br/>Version: "
+                  "%s</center><br/>")
+                 % self.version)
         getting_started = """
-        <html><em>
-        SpyDir is an extension that assists in the enumeration of application<br/>
+        <html><em><center>
+        SpyDir is an extension that assists in the enumeration of
+         application<br/>
         endpoints via an input directory containing the application's<br/>
         source code. It provides an option to process files as endpoints,<br/>
         think: ASP, PHP, HTML, or parse files to attempt to enumerate<br/>
-        endpoints via plugins, think: MVC. Users may opt to send<br/>
-        the discovered endpoints directly to the Burp Spider.</em><br/><br/>
+        endpoints via plugins, think: MVC. Users may opt to send the<br/>
+        discovered endpoints directly to the Burp Spider.
+        </center></em><br/><br/>
          <b>Getting started:</b><br/>
          <ul>
             <li>Add a local source repository</li>
             <li>Add the target URL</li>
-            <li>Use the String delimiter to construct the appropriate directory path (if necessary)</li>
-            <li>Alternatively, parse each file by selecting plugins and checking the checkbox</li>
+            <li>Use the String delimiter to construct the appropriate
+             directory path (if necessary)</li>
+            <li>Alternatively, parse each file by selecting plugins
+             and checking the checkbox</li>
             <li>Explicitly define the file extensions to process</li>
             <li>Parse the directory</li>
             <li>Verify output is correct <b>before</b> sending to spider</li>
@@ -437,12 +476,14 @@ class About(ITab):
         about_constraints.anchor = GridBagConstraints.FIRST_LINE_START
         about_constraints.weightx = 1.0
         about_constraints.weighty = 1.0
-        self.tab.add(JLabel("%s\n%s" % (about, getting_started)), about_constraints)
+        self.tab.add(JLabel("%s\n%s" % (about, getting_started)),
+                     about_constraints)
 
     @staticmethod
     def getTabCaption():
         """Returns name of tab for Burp UI"""
         return "About"
+
     def getUiComponent(self):
         """Returns UI component for Burp UI"""
         return self.tab
