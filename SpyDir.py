@@ -501,7 +501,7 @@ class About(ITab):
                   "https://github.com/aur3lius-dev/SpyDir</center><br/>")
                  % self.version)
         getting_started = """
-        <html><em><center>
+        <em><center>
         SpyDir is an extension that assists in the enumeration of
          application<br/>
         endpoints via an input directory containing the application's<br/>
@@ -522,12 +522,27 @@ class About(ITab):
             <li>Parse the directory</li>
             <li>Verify output is correct <b>before</b> sending to spider</li>
             <li>Send requests to the Burp Spider</li>
-        </ul></html>
+        </ul>
         """
+        advanced_info = """
+        <html><b>String Delimiter</b><br/>
+        String Delimiter
+        allows us to append the necessary section of the folder structure.
+        <br/>
+        Suppose the target application is hosted at the following URL:
+        https://localhost:8080. <br/>The target code base is stored in:
+        'C:\Source\TestApp'. <br/>Within the TestApp folder there is a
+        subfolder, 'views', with static .html files.<br/>
+        In this case the String Delimiter will need to equal 'TestApp'.
+        <br/>With the expectation that the tool will produce an example URL
+        will such as:<br/>https://localhost:8080/views/view1.html.<br/>
+        <b>Note:</b> String Delimiter is ignored if parsing files using
+        plugins!
+        </html>"""
         about_constraints.anchor = GridBagConstraints.FIRST_LINE_START
         about_constraints.weightx = 1.0
         about_constraints.weighty = 1.0
-        self.tab.add(JLabel("%s\n%s" % (about, getting_started)),
+        self.tab.add(JLabel("%s\n%s\n%s" % (about, getting_started, advanced_info)),
                      about_constraints)
 
     @staticmethod
