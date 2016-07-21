@@ -1,19 +1,21 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 """
-This is a sample plugin for ASP.NET MVC applications. 
+This is a sample plugin for ASP.NET MVC applications.
 It's not going to find everything!
 """
 import re
 from random import randint
 
+
 class Status():
+
     def __init__(self):
         self.last_lines = []
         self.handle_method = False
 
     def handle_http_method(self):
-        http_meth = "" 
+        http_meth = ""
         if self.handle_method:
             for prev_line in last_lines:
                 if "HttpPost" in prev_line:
@@ -22,11 +24,11 @@ class Status():
                 else:
                     http_meth = "GET"
         return http_meth
-                
+
 
 def param_parse(params):
     """
-    Function to parse and provide random values for parameters of ActionResults 
+    Function to parse and provide random values for parameters of ActionResults
     Only handles certain builtin types within ASP.NET MVC!
     Returns a dictionary of parameter name and the "generated" value
     """
@@ -55,6 +57,7 @@ def param_parse(params):
         results[pname] = val
 
     return results
+
 
 def run(filename):
     """
@@ -89,7 +92,8 @@ def run(filename):
                                               cont, action_point,
                                               p_string[:-1], http_meth)
                 else:
-                    url = "%s/%s/%s\t%s" % (location, cont, action_point, http_meth)
+                    url = "%s/%s/%s\t%s" % (location,
+                                            cont, action_point, http_meth)
                 last_lines = []
             if url is not None:
                 run_results.append(url.strip())
@@ -97,6 +101,7 @@ def run(filename):
         except Exception as e:
             raise e
     return run_results
+
 
 def get_name():
     # MUST HAVE FUNCTION! Returns plugin name.
