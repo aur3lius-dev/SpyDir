@@ -175,7 +175,7 @@ class Config(ITab):
             with open(file_loc) as loc:
                 jdump = load(loc)
         except Exception as exc:
-            self._callbacks.printOutput("Exception: %s" % str(exc))
+            self.update_scroll("[!!] Error during restore!\n\tException: %s" % str(exc))
         if jdump is not None:
             self.url.setText(jdump.get('URL'))
             # self.cookies.setText(jdump.get('Cookies'))
@@ -201,7 +201,7 @@ class Config(ITab):
                 with open(self.restore_conf.getText(), 'w') as out_file:
                     dump(self.config, out_file, sort_keys=True, indent=4)
             except Exception as exc:
-                self._callbacks.printOutput("Exception: %s" % str(exc))
+                self.update_scroll("[!!] Error during save!\n\tException: %s" % str(exc))
 
     def parse(self, event):
         """
@@ -231,10 +231,9 @@ class Config(ITab):
                             .split(self.config.get("String Delimiter"))[1]
                             + '/' + filename).replace('\\', '/')
                     except Exception as exc:
-                        self._callbacks.printError("Exception parsing:\t%s" % dirname)
-                        self._callbacks.printError(str(exc))
-                        self._callbacks.printError(str(filename))
-                    if self.restrict_ext:
+                        self.update_scroll("[!!] Error parsing: %s/%s\n\tException:%s"
+                                           % (dirname, filename, str(exc))
+                        self.restrict_ext:
                         if len(ext) > 0 and (ext.strip().upper()
                                              in self.config.get("Extension Whitelist")):
                             file_set.add(file_url)
@@ -293,34 +292,41 @@ class Config(ITab):
         choose_plugin_location.showDialog(self.tab, "Choose Folder")
         chosen_folder = choose_plugin_location.getSelectedFile()
         self.plugin_folder = chosen_folder.getAbsolutePath()
-        self._callbacks.printOutput("Attempting to load plugins from: %s" % self.plugin_folder)
         self._plugin_parse(self.plugin_folder)
-        self._callbacks.printOutput("Plugins loaded!")  # %s" % self.in_map)
 
     def _plugin_parse(self, folder):
         """Parses a local directory to get the plugins related to code level scanning"""
         self.plugins = []
+        report = ""
+        if len(self.plugins) > 0:
+            report = "[*] Plugins reloaded!"
         for _, _, filenames in walk(folder):
             for plug in filenames:
                 if path.splitext(plug)[1] == ".py":
                     lsource = "%s/%s" % (folder, plug)
                     try:
                         loaded_plug = load_source(plug, lsource)
-                        self.update_scroll("%s loaded!" % loaded_plug.get_name())
                         self.plugins.append(loaded_plug)
+                        if not report.startswith("[*]"):
+                            report += "%s loaded\n" % loaded_plug.get_name()
                     # One day I'll handle this appropriately
                     except Exception as exc:
-                        self._callbacks.printOutput("%s\t%s" % (str(exc), lsource))
+                        self.update_scroll("[!!] Error loading: %s\n\tException: %s"
+                                           % (lsource, str(exc)))
         if len(self.plugins) > 0:
             self.loaded_plugins = True
+        else:
+            report = "[!!] Plugins load failure"
+            self.loaded_plugins = False
+        self.update_scroll(report)
 
     # Status window functions
     def _print_parsed_status(self, fcount):
         """Prints the parsed directory status information"""
         if self.parse_files and not self.loaded_plugins:
             self._plugins_missing_warning()
-        self.update_scroll("[*] Found: %r files.\n[*] Found: %r files to be requested."
-                           % (fcount, len(self.url_reqs)))
+        self.update_scroll("[*] Found: %r files.\n[*] Found: %r files to be requested.\n"
+                   % (fcount, len(self.url_reqs)))
         if len(self.url_reqs) > 0:
             self.update_scroll("[*] Example URL: %s" % self.url_reqs[0])
         if len(self.config.get('exts')) > 0:

@@ -47,4 +47,4 @@ def run(filename):
 
 def get_name():
     """SpyDir Extension method used to return the name"""
-    return "Flask Routes"
+    return "Flask/Bottle Routes"
