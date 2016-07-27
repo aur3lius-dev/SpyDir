@@ -5,7 +5,8 @@ The purpose of the SpyDir tool is to extend the functionality of BurpSuite Proxy
 Plugin requirements:
 
 * Have a `get_name()` function that returns a string with the title of the plugin. 
-* Have a `run()` function that accepts a string filename. Return a `list`, `[]`, of endpoints. 
+* Have a `run()` function that accepts a list containing the lines of a source file. Return a `list`, `[]`, of endpoints.
+* Have a `get_ext()` function that returns a string containing a comma delimited string of file extension type(s).
 
 ## Requirements
 Jython2.7+ stand-alone jar file. Get it here: http://www.jython.org/downloads.html
@@ -13,3 +14,6 @@ Jython2.7+ stand-alone jar file. Get it here: http://www.jython.org/downloads.ht
 ## TODO
 1. Modify the plugin return type to allow the specification of HTTP method passed to the spider. (This will require a custom HTTP request and handler)
 2. Research possibility of implementing a brute-force mechanism based on language/framework. This tool may feed such a mechanism by remembering previously identified endpoints.
+3. Implement a plugin enable/disable mechanism
+4. Auto-resize window
+5. Export data
