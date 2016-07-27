@@ -108,6 +108,7 @@ class Config(ITab):
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
         self.config = {}
+        self.config["exts"] = {}
         self.restrict_ext = False
         self.url_reqs = []
         self.parse_files = False
@@ -125,9 +126,10 @@ class Config(ITab):
         self.restore_conf = JTextField("SpyDir.conf")
         self.url = JTextField(30)
         self.parent_window = parent
-        self.plugins = []
+        self.plugins = {}
         self.loaded_plugins = False
         self.plugin_folder = None
+        self.double_click = False
 
         # Initialize local stuff
         tab_constraints = GridBagConstraints()
@@ -171,6 +173,8 @@ class Config(ITab):
         parse_butt = JButton("Parse directory", actionPerformed=self.parse)
         clear_butt = JButton("Clear text", actionPerformed=self.clear)
         spider_butt = JButton("Send to Spider", actionPerformed=self.scan)
+        save_butt = JButton("Save config", actionPerformed=self.save)
+        rest_butt = JButton("Restore config", actionPerformed=self.restore)
 
         # Build grid
         labels.add(JLabel("Input Directory:"))
@@ -196,8 +200,8 @@ class Config(ITab):
         labels.add(JLabel(""))
         labels.add(JLabel("Config file:"))
         labels.add(self.restore_conf)
-        labels.add(JButton("Save config", actionPerformed=self.save))
-        labels.add(JButton("Restore config", actionPerformed=self.restore))
+        labels.add(save_butt)
+        labels.add(rest_butt)
         # Tool tips!
         self.dir.setToolTipText("Enter the full path to the"
                                 " application's source directory")
@@ -212,8 +216,12 @@ class Config(ITab):
                                 " to enumerate language/framework specific"
                                 " endpoints")
         parse_butt.setToolTipText("Attempt to enumerate application endpoints")
-        clear_butt.setToolTipText("Clear status window")
+        clear_butt.setToolTipText("Clear status window and the parse results")
         spider_butt.setToolTipText("Process discovered endpoints")
+        save_butt.setToolTipText("Saves the current config settings")
+        rest_butt.setToolTipText("<html>Restores previous config settings:"
+                                 "<br/>-Input Directory<br/>-String Delim"
+                                 "<br/>-Ext WL<br/>-URL<br/>-Plugins")
         return labels
 
     def set_url(self, menu_url):
@@ -244,12 +252,16 @@ class Config(ITab):
             self.url.setText(jdump.get('URL'))
             # self.cookies.setText(jdump.get('Cookies'))
             # self.headers.setText(jdump.get("Headers"))
-            self.ext_white_list.setText(jdump.get('Extension Whitelist'))
+            ewl = ""
+            for ext in jdump.get('Extension Whitelist'):
+                ewl += ext + ", "
+            self.ext_white_list.setText(ewl[:-2])
             self.delim.setText(jdump.get('String Delimiter'))
             self.dir.setText(jdump.get("Input Directory"))
             self.plugin_folder = jdump.get("Plugin Folder")
-            if self.plugin_folder is not None and len(self.plugins) < 1:
-                self._plugin_parse(self.plugin_folder)
+            if self.plugin_folder is not None and (len(self.plugins.values()) <
+                                                   1):
+                self._load_plugins(self.plugin_folder)
             self._update()
         else:
             self.update_scroll("[!!] Restore failed!")
@@ -279,48 +291,30 @@ class Config(ITab):
 
         file_set = set()
         fcount = 0
+        other_dirs = set()
+        self.config['exts'] = {}
         if self.loaded_plugins:
             self.update_scroll("[*] Attempting to parse files" +
                                " for URL patterns. This might take a minute.")
         for dirname, _, filenames in walk(self.config.get("Input Directory")):
             for filename in filenames:
                 ext = path.splitext(filename)[1]
-                count = self.config['exts'].get(ext, 0)
-                count += 1
+                count = self.config['exts'].get(ext, 0) + 1
+                # count += 1
                 self.config['exts'].update({ext: count})
                 fcount += 1
-                file_url = str(self.config.get("URL"))
                 if not self.parse_files:
-                    try:
-                        file_url += (
-                            str(dirname)
-                            .split(self.config.get("String Delimiter"))[1] +
-                            '/' + filename).replace('\\', '/')
-                    except Exception as exc:
-                        self.update_scroll("[!!] Error parsing: " +
-                                           "%s/%s\n\tException:%s"
-                                           % (dirname, filename, str(exc)))
-                    if self.restrict_ext:
-                        if (len(ext) > 0 and
-                            (ext.strip().upper()
-                             in self.config.get("Extension Whitelist"))):
-                            file_set.add(file_url)
-                    else:
-                        file_set.add(file_url)
+                    a, b = self._files_as_endpoints(dirname, filename, ext)
+                    file_set.update(a)
+                    other_dirs.update(b)
                 else:
                     # i can haz threading?
-                    if self.loaded_plugins:
-                        filename = "%s/%s" % (dirname, filename)
-                        if self.restrict_ext:
-                            if (len(ext) > 0 and
-                                (ext.strip().upper() in
-                                 self.config.get("Extension Whitelist"))):
-                                file_set.update(
-                                    self._parse_file(filename, file_url))
-                        else:
-                            file_set.update(
-                                self._parse_file(filename, file_url))
-
+                    filename = "%s/%s" % (dirname, filename)
+                    file_set.update(self._code_as_endpoints(filename, ext))
+        if len(other_dirs) > 0:
+            self.update_scroll("[*] Found files matching file extension in:\n")
+            for od in other_dirs:
+                self.update_scroll(" " * 4 + "%s\n" % od)
         for item in file_set:
             self.url_reqs.append(item)
         self._print_parsed_status(fcount)
@@ -333,10 +327,15 @@ class Config(ITab):
         """
         temp_url = self.url.getText()
         if not self._callbacks.isInScope(URL(temp_url)):
-            self._callbacks.sendToSpider(URL(temp_url))
+            if not self.double_click:
+                self.update_scroll("[!!] URL is not in scope! Press Send to "
+                                   "Spider again to add to scope and scan!")
+                self.double_click = True
+                return
+            else:
+                self._callbacks.sendToSpider(URL(temp_url))
         self.update_scroll(
             "[*] Sending %d requests to Spider" % len(self.url_reqs))
-
         for req in self.url_reqs:
             self._callbacks.sendToSpider(URL(req))
 
@@ -349,12 +348,16 @@ class Config(ITab):
         file_set = set()
         with open(filename, 'r') as plug_in:
             lines = plug_in.readlines()
-        for plug in self.plugins:
-            res = plug.run(lines)
-            if len(res) > 0:
-                for i in res:
-                    i = file_url + i
-                    file_set.add(i)
+        ext = path.splitext(filename)[1].upper()
+        # self.update_scroll("Ext: %s Keys: %r" % (ext, self.plugins.keys()))
+        if ext in self.plugins.keys():
+            # self.update_scroll("Plugins loaded: %r" % self.plugins)
+            for plug in self.plugins.get(ext):
+                res = plug.run(lines)
+                if len(res) > 0:
+                    for i in res:
+                        i = file_url + i
+                        file_set.add(i)
         return file_set
 
     def set_plugin_loc(self, event):
@@ -368,16 +371,16 @@ class Config(ITab):
         choose_plugin_location.showDialog(self.tab, "Choose Folder")
         chosen_folder = choose_plugin_location.getSelectedFile()
         self.plugin_folder = chosen_folder.getAbsolutePath()
-        self._plugin_parse(self.plugin_folder)
+        self._load_plugins(self.plugin_folder)
 
-    def _plugin_parse(self, folder):
+    def _load_plugins(self, folder):
         """
         Parses a local directory to get the plugins
             related to code level scanning
         """
-        self.plugins = []
         report = ""
-        if len(self.plugins) > 0:
+        local_load = []
+        if len(self.plugins.keys()) > 0:
             report = "[*] Plugins reloaded!"
         for _, _, filenames in walk(folder):
             for plug in filenames:
@@ -385,20 +388,30 @@ class Config(ITab):
                     lsource = "%s/%s" % (folder, plug)
                     try:
                         loaded_plug = load_source(plug, lsource)
-                        self.plugins.append(loaded_plug)
+                        local_load.append(loaded_plug)
                         if not report.startswith("[*]"):
                             report += "%s loaded\n" % loaded_plug.get_name()
                     # One day I'll handle this appropriately
                     except Exception as exc:
                         self.update_scroll(
-                            "[!!] Error loading: %s\n\t%s"
-                            % (lsource, str(exc)))
-        if len(self.plugins) > 0:
+                            "[!!] Error loading: %s\n\tType:%s Error: %s"
+                            % (lsource, type(exc), str(exc)))
+        self._dictify(local_load)
+        if len(self.plugins.keys()) > 0:
             self.loaded_plugins = True
         else:
             report = "[!!] Plugins load failure"
             self.loaded_plugins = False
         self.update_scroll(report)
+
+    def _dictify(self, plist):
+        """Converts the list of loaded plugins (plist) into a dictionary"""
+        for p in plist:
+            exts = p.get_ext().upper()
+            for ext in exts.split(","):
+                prev_load = self.plugins.get(ext, [])
+                prev_load.append(p)
+                self.plugins[ext] = prev_load
 
     # Status window functions
     def _print_parsed_status(self, fcount):
@@ -411,9 +424,9 @@ class Config(ITab):
         self.update_scroll(report)
         if len(self.url_reqs) > 0:
             self.update_scroll("[*] Example URL: %s" % self.url_reqs[0])
-        if len(self.config.get('exts')) > 0:
+        if len(self.config.get('exts', {})) > 0:
             self.update_scroll("[*] Extensions found: %s"
-                               % str(dumps(self.config.get("exts"),
+                               % str(dumps(self.config.get("exts", {}),
                                            sort_keys=True, indent=4)))
 
     def _plugins_missing_warning(self):
@@ -421,8 +434,9 @@ class Config(ITab):
         self.update_scroll("[!!] No plugins loaded!")
 
     def clear(self, event):
-        """Clears the viewport"""
+        """Clears the viewport and the current parse exts"""
         self.view_port_text.setText("===SpyDir===")
+        self.config['exts'] = {}
 
     def update_scroll(self, text):
         """updates the view_port_text with the new information"""
@@ -444,6 +458,54 @@ class Config(ITab):
         self.update_scroll(req_str)
 
     # Internal functions
+    def _code_as_endpoints(self, filename, ext):
+        file_set = set()
+        file_url = self.config.get("URL")
+        if self.loaded_plugins:
+            if self.restrict_ext:
+                if self._ext_test(ext):
+                    file_set.update(
+                        self._parse_file(filename, file_url))
+            else:
+                file_set.update(
+                    self._parse_file(filename, file_url))
+        return file_set
+
+    def _files_as_endpoints(self, dirname, filename, ext):
+        file_url = self.config.get("URL")
+        broken_splt = ""
+        other_dirs = set()
+        file_set = set()
+        spl_str = dirname.split(self.config.get("String Delimiter"))
+        try:
+            # Fix for index out of bounds exception while parsing
+            # subfolders _not_ included by the split
+            if len(spl_str) > 1:
+                file_url += ((spl_str[1] + '/' + filename)
+                             .replace('\\', '/'))
+            else:
+                broken_splt = (("%s/%s" % (dirname, filename))
+                               .split(self.config.get("Input Directory")))[1]
+                other_dirs.add(broken_splt)
+        except Exception as exc:
+            self.update_scroll("[!!] Error parsing: " +
+                               "%s/%s\n\tException: %s"
+                               % (dirname, filename, str(exc)))
+        if self.restrict_ext:
+            if self._ext_test(ext):
+                if file_url != self.config.get("URL"):
+                    file_set.add(file_url)
+            else:
+                other_dirs.discard(broken_splt)
+        else:
+            file_set.add(file_url)
+        return file_set, other_dirs
+
+    def _ext_test(self, ext):
+        return (len(ext) > 0 and
+                (ext.strip().upper()
+                 in self.config.get("Extension Whitelist")))
+
     def _update(self):
         """Updates internal data"""
         self.config["Input Directory"] = self.dir.getText()
@@ -452,12 +514,12 @@ class Config(ITab):
         white_list_text = self.ext_white_list.getText()
         if white_list_text != "Extension Whitelist" and white_list_text != "":
             self.restrict_ext = True
-        self.config["Extension Whitelist"] = white_list_text.upper()
+        self.config["Extension Whitelist"] = white_list_text.upper().split(',')
         self.config["URL"] = self.url.getText()
         # self.config["Cookies"] = self.cookies.getText()
         # self.config["Headers"] = self.headers.getText()
         # Wipe the current parse
-        self.config["exts"] = {}
+        # self.config["exts"] = {}
         if self.plugin_folder is not None:
             self.config['Plugin Folder'] = self.plugin_folder
         del self.url_reqs[:]
@@ -496,21 +558,23 @@ class About(ITab):
 
         about_constraints = GridBagConstraints()
 
-        about = (("<html><center><h2>SpyDir</h2><b>Version:</b> "
-                  "%s<br/>Created by: <em>Ryan Reid</em> (@_aur3lius)<br/>"
-                  "https://github.com/aur3lius-dev/SpyDir</center><br/>")
-                 % self.version)
-        getting_started = """
-        <em><center>
+        about_author = (("<html><center><h2>SpyDir</h2><b>Version:</b> "
+                         "%s<br/>Created by: <em>Ryan Reid</em>"
+                         " (@_aur3lius)<br/>https://github.com/aur3lius-dev/"
+                         "SpyDir</center><br/>")
+                        % self.version)
+        about_spydir = """<em><center>
         SpyDir is an extension that assists in the enumeration of
-         application<br/>
+        application<br/>
         endpoints via an input directory containing the application's<br/>
         source code. It provides an option to process files as endpoints,<br/>
         think: ASP, PHP, HTML, or parse files to attempt to enumerate<br/>
         endpoints via plugins, think: MVC. Users may opt to send the<br/>
         discovered endpoints directly to the Burp Spider.
-        </center></em><br/><br/>
-         <b>Getting started:</b><br/>
+        </center></em><br/>
+        This tool is in <b>Alpha</b>! <b>Please</b> provide feedback on the
+        GitHub page!<br/><br/>"""
+        getting_started = """<b>Getting started:</b><br/>
          <ul>
             <li>Add a local source repository</li>
             <li>Add the target URL</li>
@@ -524,11 +588,9 @@ class About(ITab):
             <li>Send requests to the Burp Spider</li>
         </ul>
         """
-        advanced_info = """
-        <html><b>String Delimiter</b><br/>
-        String Delimiter
-        allows us to append the necessary section of the folder structure.
-        <br/>
+        advanced_info = """<html><b>String Delimiter</b><br/>
+        String Delimiter allows us to append the necessary section
+        of the folder structure.<br/>
         Suppose the target application is hosted at the following URL:
         https://localhost:8080. <br/>The target code base is stored in:
         'C:\Source\TestApp'. <br/>Within the TestApp folder there is a
@@ -542,7 +604,9 @@ class About(ITab):
         about_constraints.anchor = GridBagConstraints.FIRST_LINE_START
         about_constraints.weightx = 1.0
         about_constraints.weighty = 1.0
-        self.tab.add(JLabel("%s\n%s\n%s" % (about, getting_started, advanced_info)),
+        self.tab.add(JLabel("%s\n%s\n%s\n%s" % (about_author, about_spydir,
+                                                getting_started,
+                                                advanced_info)),
                      about_constraints)
 
     @staticmethod
