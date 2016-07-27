@@ -58,6 +58,8 @@ def param_parse(params):
 
     return results
 
+def get_ext():
+    return ".cs"
 
 def run(filename):
     """

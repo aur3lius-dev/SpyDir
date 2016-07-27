@@ -23,6 +23,8 @@ def handle_path_vars(var_names):
                 ret_val[var] = ""
     return ret_val
 
+def get_ext():
+    return ".py"
 
 def run(filename):
     """
