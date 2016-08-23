@@ -10,18 +10,40 @@ import re
 def set_path_vars():
     """Update these variables and values on a per app basis."""
     return {
-            "{id}": 2,
-            "{eventId}": 3,
-            "{receiver}": "Steve",
-            "{user}": "Bob",
-            "{userId}": 4,
-            "{friend}": "Paul",
-            "{owner}": "Tom",
-            "{name}": "John",
-            "{amount}": "3.50",
-            "{hidden}": "secret",
-            "{oldPassword}": "12345",
-            "{newPassword}": "hunter2"}
+        "{id}": 2,
+        "{eventId}": 3,
+        "{receiver}": "Steve",
+        "{user}": "Bob",
+        "{userId}": 4,
+        "{friend}": "Paul",
+        "{owner}": "Tom",
+        "{name}": "John",
+        "{amount}": "3.50",
+        "{hidden}": "secret",
+        "{oldPassword}": "12345",
+        "{newPassword}": "hunter2"}
+
+
+def set_param_vals():
+    return {
+        "{String}": "str12345",
+        "{int}": 12345,
+        "{Long}": 9012310231013
+    }
+
+
+def handle_params(params):
+    assignment = ""
+    reg = '(.*"\))([\s])(.*)(,|\))'
+    for par in params:
+        par_find = re.search(reg, par)
+        if par_find:
+            par_name = par_find.group(1).replace('"', "").replace(")", "")
+            par_type = par_find.group(3).split()[0].strip()
+            assignment += "%s={%s}&" % (par_name, par_type)
+    for k, v in set_param_vals().items():
+        assignment = assignment.replace(k, str(v))
+    return assignment[:-1]
 
 
 def handle_path_vars(route):
@@ -34,8 +56,10 @@ def handle_path_vars(route):
         new_route = new_route.replace(k, str(v))
     return new_route
 
+
 def get_ext():
     return ".java"
+
 
 def run(filename):
     """
@@ -43,30 +67,41 @@ def run(filename):
         process Spring 2.5+ MVC Routes
     """
     req_map = "@RequestMapping("
-    route_rule = "(value\s*=\s*)([\"].*[\"])|([\"].*[\"])"
+    route_rule = "(value\s*=\s*)([\"].*[\"])(,|\))|([\"].*[\"])"
     path_rule = "({\w+})"
+    req_param = "@RequestParam(\""
+
     route_list = []
+
     for line in filename:
+        line = line.strip()
         if not line.startswith("//"):
             route = None
-            line = line.strip()
             if req_map in line:
                 line = line.replace(req_map, "").replace(")", "")
                 val_find = re.search(route_rule, line)
                 if val_find:
                     if val_find.group(2) is not None:
-                        route = val_find.group(2).replace("\"", "").strip()
-                    elif val_find.group(3) is not None:
-                        route = val_find.group(3).replace("\"", "").strip()
+                        route = val_find.group(2).replace(
+                            "\"", "").strip().split(',')[0]
+                    elif val_find.group(4) is not None:
+                        route = val_find.group(4).replace("\"", "").strip()
                 if route is not None:
                     path_finder = re.search(path_rule, route)
                     if path_finder:
                         route = handle_path_vars(route)
                     route_list.append(route)
+                    prev_route = route
+            if req_param in line:
+                params = line.split(req_param)
+                w_pars = "%s?%s" % (prev_route, handle_params(params[1:]))
+                route_list.append(w_pars)
+
             # Don't currently process methods at the extension level
             # mult_method = re.search("([,\s*|)\s*]method\s*=\s*\{.*\})", line)
             # if mult_method:
             #    mult_method = mult_method.group().strip()
+    route_list.sort()
     return route_list
 
 
