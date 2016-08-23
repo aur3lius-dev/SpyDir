@@ -339,6 +339,22 @@ class Config(ITab):
         for req in self.url_reqs:
             self._callbacks.sendToSpider(URL(req))
 
+    def clear(self, event):
+            """Clears the viewport and the current parse exts"""
+            self.view_port_text.setText("===SpyDir===")
+            self.config['exts'] = {}
+
+    def print_endpoints(self, event):
+        """Prints the discovered endpoints to the status window."""
+        req_str = ""
+        if len(self.url_reqs) > 0:
+            self.update_scroll("[*] Printing all discovered endpoints:")
+            for req in self.url_reqs:
+                req_str += "    %s\n" % req
+        else:
+            req_str = "[!!] No endpoints discovered"
+        self.update_scroll(req_str)
+
     # Plugin functions
     def _parse_file(self, filename, file_url):
         """
@@ -383,19 +399,15 @@ class Config(ITab):
         if len(self.plugins.keys()) > 0:
             report = "[*] Plugins reloaded!"
         for _, _, filenames in walk(folder):
-            for plug in filenames:
-                if path.splitext(plug)[1] == ".py":
-                    lsource = "%s/%s" % (folder, plug)
-                    try:
-                        loaded_plug = load_source(plug, lsource)
+            for p_name in filenames:
+                if path.splitext(p_name)[1] == ".py":
+                    f_loc = "%s/%s" % (folder, p_name)
+                    loaded_plug = self._validate_plugin(p_name, f_loc)
+                    if loaded_plug:
                         local_load.append(loaded_plug)
                         if not report.startswith("[*]"):
                             report += "%s loaded\n" % loaded_plug.get_name()
-                    # One day I'll handle this appropriately
-                    except Exception as exc:
-                        self.update_scroll(
-                            "[!!] Error loading: %s\n\tType:%s Error: %s"
-                            % (lsource, type(exc), str(exc)))
+
         self._dictify(local_load)
         if len(self.plugins.keys()) > 0:
             self.loaded_plugins = True
@@ -403,6 +415,40 @@ class Config(ITab):
             report = "[!!] Plugins load failure"
             self.loaded_plugins = False
         self.update_scroll(report)
+
+    def _validate_plugin(self, p_name, f_loc):
+        """
+        Attempts to verify the manditory plugin functions to prevent broken
+        plugins from loading.
+        Generates an error message if plugin does not contain an appropriate
+        function.
+        """
+        # Load the plugin
+        try:
+            plug = load_source(p_name, f_loc)
+        # One day I'll handle this appropriately
+        except Exception as exc:
+            self.update_scroll(
+                "[!!] Error loading: %s\n\tType:%s Error: %s"
+                % (f_loc, type(exc), str(exc)))
+        # Verify the plugin's functions
+        funcs = dir(plug)
+        err = []
+        if "get_name" not in funcs:
+            err.append("get_name()")
+        if "get_ext" not in funcs:
+            err.append("get_ext()")
+        if "run" not in funcs:
+            err.append("run()")
+
+        # Report errors & return
+        if len(err) < 1:
+            return plug
+        else:
+            for issue in err:
+                self.update_scroll("[!!] %s is missing: %s func" %
+                                   (p_name, issue))
+            return None
 
     def _dictify(self, plist):
         """Converts the list of loaded plugins (plist) into a dictionary"""
@@ -433,11 +479,6 @@ class Config(ITab):
         """Prints a warning message"""
         self.update_scroll("[!!] No plugins loaded!")
 
-    def clear(self, event):
-        """Clears the viewport and the current parse exts"""
-        self.view_port_text.setText("===SpyDir===")
-        self.config['exts'] = {}
-
     def update_scroll(self, text):
         """updates the view_port_text with the new information"""
         temp = self.view_port_text.getText().strip()
@@ -445,17 +486,6 @@ class Config(ITab):
             self.view_port_text.setText("%s\n%s" % (temp, text))
         elif not temp.endswith("[*] Status unchanged"):
             self.view_port_text.setText("%s\n[*] Status unchanged" % temp)
-
-    def print_endpoints(self, event):
-        """Prints the discovered endpoints to the status window."""
-        req_str = ""
-        if len(self.url_reqs) > 0:
-            self.update_scroll("[*] Printing all discovered endpoints:")
-            for req in self.url_reqs:
-                req_str += "    %s\n" % req
-        else:
-            req_str = "[!!] No endpoints discovered"
-        self.update_scroll(req_str)
 
     # Internal functions
     def _code_as_endpoints(self, filename, ext):
