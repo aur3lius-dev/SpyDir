@@ -506,7 +506,12 @@ class Config(ITab):
         broken_splt = ""
         other_dirs = set()
         file_set = set()
-        spl_str = dirname.split(self.config.get("String Delimiter"))
+        str_del = self.config.get("String Delimiter")
+        if not str_del:
+            self.update_scroll("[!!] No available String Delimiter!")
+            return
+        spl_str = dirname.split(str_del)
+
         try:
             # Fix for index out of bounds exception while parsing
             # subfolders _not_ included by the split
@@ -583,7 +588,7 @@ class About(ITab):
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
         self.tab = JPanel(GridBagLayout())
-        self.version = "0.8.2"
+        self.version = "0.8.3"
         self.parent_window = parent
 
         about_constraints = GridBagConstraints()
