@@ -6,9 +6,10 @@ from burp import (IBurpExtender, IBurpExtenderCallbacks, ITab,
 
 from javax.swing import (JPanel, JTextField, GroupLayout, JTabbedPane,
                          JButton, JLabel, JScrollPane, JTextArea,
-                         JFileChooser, JCheckBox, JMenuItem)
+                         JFileChooser, JCheckBox, JMenuItem, JList,
+                         DefaultListModel, ListSelectionModel)
 from java.net import URL
-from java.awt import GridLayout, GridBagLayout, GridBagConstraints
+from java.awt import GridLayout, GridBagLayout, GridBagConstraints, Dimension
 
 from os import walk, path
 from json import load, dump, dumps
@@ -60,7 +61,7 @@ class SpyTab(JPanel, ITab):
         super(SpyTab, self).__init__(GroupLayout(self))
         self._callbacks = callbacks
         config = Config(self._callbacks, self)
-        about = About(self._callbacks, self)
+        about = About(self._callbacks)
         self.tabs = [config, about]
         self.j_tabs = self.build_ui()
         self.add(self.j_tabs)
@@ -292,25 +293,32 @@ class Config(ITab):
         file_set = set()
         fcount = 0
         other_dirs = set()
+        idir = self.config.get("Input Directory")
         self.config['exts'] = {}
         if self.loaded_plugins:
             self.update_scroll("[*] Attempting to parse files" +
                                " for URL patterns. This might take a minute.")
-        for dirname, _, filenames in walk(self.config.get("Input Directory")):
-            for filename in filenames:
-                ext = path.splitext(filename)[1]
-                count = self.config['exts'].get(ext, 0) + 1
-                # count += 1
-                self.config['exts'].update({ext: count})
-                fcount += 1
-                if not self.parse_files:
-                    a, b = self._files_as_endpoints(dirname, filename, ext)
-                    file_set.update(a)
-                    other_dirs.update(b)
-                else:
-                    # i can haz threading?
+        if path.isdir(idir):
+            for dirname, _, filenames in walk(self.config.get("Input Directory")):
+                for filename in filenames:
+                    fcount += 1
+                    ext = path.splitext(filename)[1]
+                    count = self.config['exts'].get(ext, 0) + 1
                     filename = "%s/%s" % (dirname, filename)
-                    file_set.update(self._code_as_endpoints(filename, ext))
+                    # count += 1
+                    self.config['exts'].update({ext: count})
+                    if not self.parse_files:
+                        a, b = self._files_as_endpoints(filename, ext)
+                        file_set.update(a)
+                        other_dirs.update(b)
+                    else:
+                        # i can haz threading?
+                        file_set.update(self._code_as_endpoints(filename, ext))
+        elif path.isfile(idir):
+            ext = path.splitext(idir)[1]
+            file_set.update(self._code_as_endpoints(idir, ext))
+        else:
+            self.update_scroll("[!!] Input Directory is not valid!")
         if len(other_dirs) > 0:
             self.update_scroll("[*] Found files matching file extension in:\n")
             for od in other_dirs:
@@ -369,7 +377,10 @@ class Config(ITab):
         if ext in self.plugins.keys():
             # self.update_scroll("Plugins loaded: %r" % self.plugins)
             for plug in self.plugins.get(ext):
-                res = plug.run(lines)
+                if ext == '.TXT':
+                    res = lines
+                else:
+                    res = plug.run(lines)
                 if len(res) > 0:
                     for i in res:
                         i = file_url + i
@@ -501,7 +512,7 @@ class Config(ITab):
                     self._parse_file(filename, file_url))
         return file_set
 
-    def _files_as_endpoints(self, dirname, filename, ext):
+    def _files_as_endpoints(self, filename, ext):
         file_url = self.config.get("URL")
         broken_splt = ""
         other_dirs = set()
@@ -510,22 +521,23 @@ class Config(ITab):
         if not str_del:
             self.update_scroll("[!!] No available String Delimiter!")
             return
-        spl_str = dirname.split(str_del)
+        spl_str = filename.split(str_del)
+        if not file_url.endswith('/'):
+            file_url += '/'
 
         try:
             # Fix for index out of bounds exception while parsing
             # subfolders _not_ included by the split
             if len(spl_str) > 1:
-                file_url += ((spl_str[1] + '/' + filename)
+                file_url += ((spl_str[1])
                              .replace('\\', '/'))
             else:
-                broken_splt = (("%s/%s" % (dirname, filename))
-                               .split(self.config.get("Input Directory")))[1]
+                broken_splt = filename.split(self.config.get("Input Directory"))[1]
                 other_dirs.add(broken_splt)
         except Exception as exc:
             self.update_scroll("[!!] Error parsing: " +
-                               "%s/%s\n\tException: %s"
-                               % (dirname, filename, str(exc)))
+                               "%s\n\tException: %s"
+                               % (filename, str(exc)))
         if self.restrict_ext:
             if self._ext_test(ext):
                 if file_url != self.config.get("URL"):
@@ -581,15 +593,14 @@ class Config(ITab):
         return self.tab
 
 
+
 class About(ITab):
     """Defines the About tab"""
 
-    def __init__(self, callbacks, parent):
+    def __init__(self, callbacks):
         self._callbacks = callbacks
-        self._helpers = callbacks.getHelpers()
         self.tab = JPanel(GridBagLayout())
-        self.version = "0.8.3"
-        self.parent_window = parent
+        self.version = "0.8.4"
 
         about_constraints = GridBagConstraints()
 
