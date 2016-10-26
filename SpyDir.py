@@ -62,7 +62,8 @@ class SpyTab(JPanel, ITab):
         self._callbacks = callbacks
         config = Config(self._callbacks, self)
         about = About(self._callbacks)
-        self.tabs = [config, about]
+        plugs = Plugins(self._callbacks)
+        self.tabs = [config, plugs, about]
         self.j_tabs = self.build_ui()
         self.add(self.j_tabs)
 
@@ -592,6 +593,77 @@ class Config(ITab):
         """Returns the UI component for the Burp Suite tab"""
         return self.tab
 
+
+class Plugins(ITab):
+    """Defines the Plugins tab"""
+
+    def __init__(self, callbacks):
+        self._callbacks = callbacks
+        self.tab = JPanel(GridBagLayout())
+        self.tab_constraints = GridBagConstraints()
+        self.list_model = DefaultListModel()
+        self.plug_jlist = JList(self.list_model)
+        self.scroll_pane = JScrollPane(self.plug_jlist)
+        self.p_chex = []
+        self.plug_jlist.setLayoutOrientation(JList.VERTICAL);
+        self.plug_jlist.setVisibleRowCount(-1);
+        self.plug_jlist.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION)
+        self.scroll_pane.setPreferredSize(Dimension(600, 400));
+        self.list_plugs("/Users/ryanreid/Code/Burp/SpyDir/plugins")
+        self.tab.add(self.scroll_pane)
+
+    def list_plugs(self, folder):
+        for _, _, filenames in walk(folder):
+            for p_name in filenames:
+                if path.splitext(p_name)[1] == ".py":
+                    self.list_model.addElement(p_name)
+        self.plug_jlist.setModel(self.list_model)
+        self._callbacks.printOutput("Added the list info")
+    def load_plug(self, event):
+        self._callbacks.printOutput(str(event))
+
+    def _validate_plugin(self, p_name, f_loc):
+        """
+        Attempts to verify the manditory plugin functions to prevent broken
+        plugins from loading.
+        Generates an error message if plugin does not contain an appropriate
+        function.
+        """
+        # Load the plugin
+        try:
+            plug = load_source(p_name, f_loc)
+        # One day I'll handle this appropriately
+        except Exception as exc:
+            self.update_scroll(
+                "[!!] Error loading: %s\n\tType:%s Error: %s"
+                % (f_loc, type(exc), str(exc)))
+        # Verify the plugin's functions
+        funcs = dir(plug)
+        err = []
+        if "get_name" not in funcs:
+            err.append("get_name()")
+        if "get_ext" not in funcs:
+            err.append("get_ext()")
+        if "run" not in funcs:
+            err.append("run()")
+
+        # Report errors & return
+        if len(err) < 1:
+            return plug
+        else:
+            for issue in err:
+                self.update_scroll("[!!] %s is missing: %s func" %
+                                   (p_name, issue))
+            return None
+
+    @staticmethod
+    def getTabCaption():
+        """Returns name of tab for Burp UI"""
+        return "Plugins"
+
+    def getUiComponent(self):
+        """Returns UI component for Burp UI"""
+        return self.tab
 
 
 class About(ITab):
