@@ -384,9 +384,13 @@ class Config(ITab):
             JFileChooser.FILES_AND_DIRECTORIES)
         source_chooser.showDialog(self.tab, "Choose Source Location")
         chosen_source = source_chooser.getSelectedFile()
-        self.source_input = chosen_source.getAbsolutePath()
-        self.update_scroll("[*] Source location: %s" % self.source_input)
-        self.curr_conf.setText(self.source_input)
+        try:
+            self.source_input = chosen_source.getAbsolutePath()
+        except AttributeError as aerr:
+            pass
+        if self.source_input not None:
+            self.update_scroll("[*] Source location: %s" % self.source_input)
+            self.curr_conf.setText(self.source_input)
 
     # Plugin functions
     def _parse_file(self, filename, file_url):
