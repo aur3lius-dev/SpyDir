@@ -116,7 +116,6 @@ class Config(ITab):
         self.tab = JPanel(GridBagLayout())
         self.view_port_text = JTextArea("===SpyDir===")
         self.status_field = JScrollPane(self.view_port_text)
-        self.dir = JTextField(30)
         self.delim = JTextField(30)
         self.ext_white_list = JTextField(30)
         # I'm not sure if these fields are necessary still
@@ -131,6 +130,9 @@ class Config(ITab):
         self.loaded_plugins = False
         self.plugin_folder = None
         self.double_click = False
+        self.source_input = ""
+        self.print_stats = True
+        self.curr_conf = JLabel()
 
         # Initialize local stuff
         tab_constraints = GridBagConstraints()
@@ -168,6 +170,7 @@ class Config(ITab):
         labels = JPanel(GridLayout(21, 1))
         checkbox = JCheckBox("Attempt to parse files for URL patterns?",
                              False, actionPerformed=self.set_parse)
+        stats_box = JCheckBox("Show stats?", True, actionPerformed=self.set_show_stats)
         # The two year old in me is laughing heartily
         plug_butt = JButton("Specify plugins location",
                             actionPerformed=self.set_plugin_loc)
@@ -176,10 +179,11 @@ class Config(ITab):
         spider_butt = JButton("Send to Spider", actionPerformed=self.scan)
         save_butt = JButton("Save config", actionPerformed=self.save)
         rest_butt = JButton("Restore config", actionPerformed=self.restore)
+        source_butt = JButton("Input Source File/Directory", actionPerformed=self.get_source_input)
 
         # Build grid
-        labels.add(JLabel("Input Directory:"))
-        labels.add(self.dir)
+        labels.add(source_butt)
+        labels.add(self.curr_conf)
         labels.add(JLabel("String Delimiter:"))
         labels.add(self.delim)
         labels.add(JLabel("Extension Whitelist:"))
@@ -192,6 +196,7 @@ class Config(ITab):
         # labels.add(JLabel("HTTP Headers:"))
         # labels.add(self.headers)
         labels.add(checkbox)
+        labels.add(stats_box)
         labels.add(plug_butt)
         labels.add(parse_butt)
         labels.add(JButton("Show all endpoints",
@@ -203,13 +208,12 @@ class Config(ITab):
         labels.add(self.restore_conf)
         labels.add(save_butt)
         labels.add(rest_butt)
+        
         # Tool tips!
-        self.dir.setToolTipText("Enter the full path to the"
-                                " application's source directory")
         self.delim.setToolTipText("Use to manipulate the final URL. "
                                   "See About tab for example.")
-        self.ext_white_list.setToolTipText("Define the file"
-                                           " extensions to parse")
+        self.ext_white_list.setToolTipText("Define a comma delimited list of"
+                                           " fileextensions to parse.")
         self.url.setToolTipText("Enter the target URL")
         self.restore_conf.setToolTipText("Enter the full path to a file "
                                          "to save/restore SpyDir settings")
@@ -223,6 +227,9 @@ class Config(ITab):
         rest_butt.setToolTipText("<html>Restores previous config settings:"
                                  "<br/>-Input Directory<br/>-String Delim"
                                  "<br/>-Ext WL<br/>-URL<br/>-Plugins")
+        source_butt.setToolTipText("Select the application's "
+                                "source directory or file to parse")
+
         return labels
 
     def set_url(self, menu_url):
@@ -258,12 +265,13 @@ class Config(ITab):
                 ewl += ext + ", "
             self.ext_white_list.setText(ewl[:-2])
             self.delim.setText(jdump.get('String Delimiter'))
-            self.dir.setText(jdump.get("Input Directory"))
+            self.source_input = jdump.get("Input Directory")
             self.plugin_folder = jdump.get("Plugin Folder")
             if self.plugin_folder is not None and (len(self.plugins.values()) <
                                                    1):
                 self._load_plugins(self.plugin_folder)
             self._update()
+            self.update_scroll("[*] Restore complete!")
         else:
             self.update_scroll("[!!] Restore failed!")
 
@@ -277,6 +285,7 @@ class Config(ITab):
             try:
                 with open(self.restore_conf.getText(), 'w') as out_file:
                     dump(self.config, out_file, sort_keys=True, indent=4)
+                self.update_scroll("[*] Settings saved!") 
             except Exception as exc:
                 self.update_scroll(
                     "[!!] Error during save!\n\tException: %s" % str(exc))
@@ -293,13 +302,12 @@ class Config(ITab):
         file_set = set()
         fcount = 0
         other_dirs = set()
-        idir = self.config.get("Input Directory")
         self.config['exts'] = {}
         if self.loaded_plugins:
             self.update_scroll("[*] Attempting to parse files" +
                                " for URL patterns. This might take a minute.")
-        if path.isdir(idir):
-            for dirname, _, filenames in walk(self.config.get("Input Directory")):
+        if path.isdir(self.source_input):
+            for dirname, _, filenames in walk(self.source_input):
                 for filename in filenames:
                     fcount += 1
                     ext = path.splitext(filename)[1]
@@ -314,9 +322,9 @@ class Config(ITab):
                     else:
                         # i can haz threading?
                         file_set.update(self._code_as_endpoints(filename, ext))
-        elif path.isfile(idir):
-            ext = path.splitext(idir)[1]
-            file_set.update(self._code_as_endpoints(idir, ext))
+        elif path.isfile(self.source_input):
+            ext = path.splitext(self.source_input)[1]
+            file_set.update(self._code_as_endpoints(self.source_input, ext))
         else:
             self.update_scroll("[!!] Input Directory is not valid!")
         if len(other_dirs) > 0:
@@ -324,7 +332,7 @@ class Config(ITab):
             for od in other_dirs:
                 self.update_scroll(" " * 4 + "%s\n" % od)
         for item in file_set:
-            self.url_reqs.append(item)
+            self.url_reqs.append(item.replace('//', '/'))
         self._print_parsed_status(fcount)
 
     def scan(self, event):
@@ -363,6 +371,20 @@ class Config(ITab):
             req_str = "[!!] No endpoints discovered"
         self.update_scroll(req_str)
 
+    def set_show_stats(self, event):
+        """Modifies the show stats setting"""
+        self.print_stats = not self.print_stats
+
+    def get_source_input(self, event):
+        """Sets the source dir/file for parsing""" 
+        source_chooser = JFileChooser()
+        source_chooser.setFileSelectionMode(
+            JFileChooser.FILES_AND_DIRECTORIES)
+        source_chooser.showDialog(self.tab, "Choose Source Location")
+        chosen_source = source_chooser.getSelectedFile()
+        self.source_input = chosen_source.getAbsolutePath()
+        self.update_scroll("[*] Source location: %s" % self.source_input)
+
     # Plugin functions
     def _parse_file(self, filename, file_url):
         """
@@ -377,14 +399,15 @@ class Config(ITab):
         if ext in self.plugins.keys():
             # self.update_scroll("Plugins loaded: %r" % self.plugins)
             for plug in self.plugins.get(ext):
-                if ext == '.TXT':
-                    res = lines
-                else:
-                    res = plug.run(lines)
+                res = plug.run(lines)
                 if len(res) > 0:
                     for i in res:
                         i = file_url + i
                         file_set.add(i)
+        elif ext == '.TXT' and self._ext_test(ext):
+            for i in lines:
+                i = file_url + i
+                file_set.add(i.strip())                    
         return file_set
 
     def set_plugin_loc(self, event):
@@ -475,16 +498,22 @@ class Config(ITab):
         """Prints the parsed directory status information"""
         if self.parse_files and not self.loaded_plugins:
             self._plugins_missing_warning()
-        report = (("[*] Found: %r files.\n" +
-                  "[*] Found: %r files to be requested.\n")
-                  % (fcount, len(self.url_reqs)))
-        self.update_scroll(report)
         if len(self.url_reqs) > 0:
             self.update_scroll("[*] Example URL: %s" % self.url_reqs[0])
-        if len(self.config.get('exts', {})) > 0:
-            self.update_scroll("[*] Extensions found: %s"
-                               % str(dumps(self.config.get("exts", {}),
-                                           sort_keys=True, indent=4)))
+        
+        if self.print_stats:    
+            report = (("[*] Found: %r files.\n" +
+                      "[*] Found: %r files to be requested.\n")
+                      % (fcount, len(self.url_reqs)))
+            if len(self.config.get('exts', {})) > 0:
+                self.update_scroll("[*] Extensions found: %s"
+                                   % str(dumps(self.config.get("exts", {}),
+                                               sort_keys=True, indent=4)))
+        else:
+            report = ("[*] Found: %r files to be requested.\n" %
+                len(self.url_reqs))
+        self.update_scroll(report)
+            
 
     def _plugins_missing_warning(self):
         """Prints a warning message"""
@@ -522,8 +551,6 @@ class Config(ITab):
             self.update_scroll("[!!] No available String Delimiter!")
             return
         spl_str = filename.split(str_del)
-        if not file_url.endswith('/'):
-            file_url += '/'
 
         try:
             # Fix for index out of bounds exception while parsing
@@ -532,7 +559,7 @@ class Config(ITab):
                 file_url += ((spl_str[1])
                              .replace('\\', '/'))
             else:
-                broken_splt = filename.split(self.config.get("Input Directory"))[1]
+                broken_splt = filename.split(self.source_input)[1]
                 other_dirs.add(broken_splt)
         except Exception as exc:
             self.update_scroll("[!!] Error parsing: " +
@@ -555,14 +582,18 @@ class Config(ITab):
 
     def _update(self):
         """Updates internal data"""
-        self.config["Input Directory"] = self.dir.getText()
+        self.config["Input Directory"] = self.source_input
         self.config["String Delimiter"] = self.delim.getText()
 
         white_list_text = self.ext_white_list.getText()
         if white_list_text != "Extension Whitelist" and white_list_text != "":
             self.restrict_ext = True
         self.config["Extension Whitelist"] = white_list_text.upper().split(',')
-        self.config["URL"] = self.url.getText()
+        file_url = self.url.getText()
+        if not file_url.endswith('/'):
+            file_url += '/'
+
+        self.config["URL"] = file_url
         # self.config["Cookies"] = self.cookies.getText()
         # self.config["Headers"] = self.headers.getText()
         # Wipe the current parse
@@ -570,6 +601,7 @@ class Config(ITab):
         if self.plugin_folder is not None:
             self.config['Plugin Folder'] = self.plugin_folder
         del self.url_reqs[:]
+        self.curr_conf.setText(self.source_input)
 
     # Window sizing functions
     def resize(self, event):
@@ -591,7 +623,6 @@ class Config(ITab):
     def getUiComponent(self):
         """Returns the UI component for the Burp Suite tab"""
         return self.tab
-
 
 
 class About(ITab):
@@ -634,7 +665,7 @@ class About(ITab):
             <li>Send requests to the Burp Spider</li>
         </ul>
         """
-        advanced_info = """<html><b>String Delimiter</b><br/>
+        advanced_info = r"""<html><b>String Delimiter</b><br/>
         String Delimiter allows us to append the necessary section
         of the folder structure.<br/>
         Suppose the target application is hosted at the following URL:
