@@ -388,7 +388,7 @@ class Config(ITab):
             self.source_input = chosen_source.getAbsolutePath()
         except AttributeError as aerr:
             pass
-        if self.source_input not None:
+        if self.source_input is not None:
             self.update_scroll("[*] Source location: %s" % self.source_input)
             self.curr_conf.setText(self.source_input)
 
