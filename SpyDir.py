@@ -6,13 +6,14 @@ from burp import (IBurpExtender, IBurpExtenderCallbacks, ITab,
 
 from javax.swing import (JPanel, JTextField, GroupLayout, JTabbedPane,
                          JButton, JLabel, JScrollPane, JTextArea,
-                         JFileChooser, JCheckBox, JMenuItem)
-from java.net import URL, MalformedURLException
-from java.awt import GridLayout, GridBagLayout, GridBagConstraints
+                         JFileChooser, JCheckBox, JMenuItem, JFrame, JViewport)
+from java.net import URL
+from java.awt import GridLayout, GridBagLayout, GridBagConstraints, Dimension
 
 from os import walk, path
 from json import loads, dumps
 from imp import load_source
+
 
 VERSION = "0.8.4"
 
@@ -64,8 +65,8 @@ class SpyTab(JPanel, ITab):
         self._callbacks = callbacks
         config = Config(self._callbacks, self)
         about = About(self._callbacks)
-        plugs = Plugins(self._callbacks)
-        self.tabs = [config, plugs, about]
+        # plugs = Plugins(self._callbacks)
+        self.tabs = [config, about]
         self.j_tabs = self.build_ui()
         self.add(self.j_tabs)
 
@@ -127,12 +128,17 @@ class Config(ITab):
         self.url = JTextField(30)
         self.parent_window = parent
         self.plugins = {}
+        self.loaded_p_list = set()
         self.loaded_plugins = False
         self.config['Plugin Folder'] = None
         self.double_click = False
         self.source_input = ""
         self.print_stats = True
         self.curr_conf = JLabel()
+        self.window = JFrame("Select plugins",
+                             preferredSize=(200, 250), windowClosing=self.p_close)
+        self.window.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE)
+        self.window.setVisible(False)
 
         # Initialize local stuff
         tab_constraints = GridBagConstraints()
@@ -176,6 +182,8 @@ class Config(ITab):
         # The two year old in me is laughing heartily
         plug_butt = JButton("Specify plugins location",
                             actionPerformed=self.set_plugin_loc)
+        load_plug_butt = JButton("Select plugins",
+                                 actionPerformed=self.p_build_ui)
         parse_butt = JButton("Parse directory", actionPerformed=self.parse)
         clear_butt = JButton("Clear text", actionPerformed=self.clear)
         spider_butt = JButton("Send to Spider", actionPerformed=self.scan)
@@ -209,6 +217,7 @@ class Config(ITab):
         labels.add(JLabel(""))
         labels.add(save_butt)
         labels.add(rest_butt)
+        labels.add(load_plug_butt)
 
         # Tool tips!
         self.delim.setToolTipText("Use to manipulate the final URL. "
@@ -405,11 +414,12 @@ class Config(ITab):
         ext = path.splitext(filename)[1].upper()
         if ext in self.plugins.keys():
             for plug in self.plugins.get(ext):
-                res = plug.run(lines)
-                if len(res) > 0:
-                    for i in res:
-                        i = file_url + i
-                        file_set.add(i)
+                if plug.enabled:
+                    res = plug.run(lines)
+                    if len(res) > 0:
+                        for i in res:
+                            i = file_url + i
+                            file_set.add(i)
         elif ext == '.TXT' and self._ext_test(ext):
             for i in lines:
                 i = file_url + i
@@ -435,7 +445,6 @@ class Config(ITab):
             related to code level scanning
         """
         report = ""
-        local_load = []
         if len(self.plugins.keys()) > 0:
             report = "[^] Plugins reloaded!"
         for _, _, filenames in walk(folder):
@@ -444,11 +453,11 @@ class Config(ITab):
                     f_loc = "%s/%s" % (folder, p_name)
                     loaded_plug = self._validate_plugin(p_name, f_loc)
                     if loaded_plug:
-                        local_load.append(loaded_plug)
+                        self.loaded_p_list.add(loaded_plug)
                         if not report.startswith("[*]"):
                             report += "%s loaded\n" % loaded_plug.get_name()
 
-        self._dictify(local_load)
+        self._dictify(self.loaded_p_list)
         if len(self.plugins.keys()) > 0:
             self.loaded_plugins = True
         else:
@@ -482,7 +491,7 @@ class Config(ITab):
 
         # Report errors & return
         if len(err) < 1:
-            return plug
+            return Plugin(plug, True)
         else:
             for issue in err:
                 self.update_scroll("[!!] %s is missing: %s func" %
@@ -512,8 +521,8 @@ class Config(ITab):
                        "Found: %r files.\n") % (len(self.url_reqs), fcount))
             if len(self.ext_stats) > 0:
                 report += ("[*] Extensions found: %s"
-                                   % str(dumps(self.ext_stats,
-                                               sort_keys=True, indent=4)))
+                           % str(dumps(self.ext_stats,
+                                       sort_keys=True, indent=4)))
         else:
             report = ("[*] Found: %r files to be requested.\n" %
                       len(self.url_reqs))
@@ -545,6 +554,7 @@ class Config(ITab):
         return file_set
 
     def _files_as_endpoints(self, filename, ext):
+        """Generates endpoints via files with the appropriate extension(s)"""
         file_url = self.config.get("URL")
         broken_splt = ""
         other_dirs = set()  # directories outside of the String Delim.
@@ -614,6 +624,57 @@ class Config(ITab):
             self.parent_window.validate()
             self.parent_window.switch_focus()
 
+    def p_close(self, event):
+        """
+        Handles the window close event.
+        """
+        self.window.setVisible(False)
+        self.window.dispose()
+
+    def p_build_ui(self, event):
+        """
+        Adds a list of checkboxes, one for each loaded plugin
+        to the Selct plugins window
+        """
+        if not self.loaded_p_list:
+            self.update_scroll("[!!] No plugins loaded!")
+            return
+
+        scroll_pane = JScrollPane()
+        scroll_pane.setPreferredSize(Dimension(200, 250));
+        
+        check_frame = JPanel(GridBagLayout())
+        constraints = GridBagConstraints()
+        constraints.fill = GridBagConstraints.HORIZONTAL
+        constraints.gridy = 0
+        constraints.anchor = GridBagConstraints.FIRST_LINE_START
+
+        for plug in self.loaded_p_list:
+            check_frame.add(JCheckBox(plug.get_name(), plug.enabled,
+                           actionPerformed=self.update_box), constraints)
+            constraints.gridy += 1
+        
+        vport = JViewport()
+        vport.setView(check_frame)
+        scroll_pane.setViewport(vport)
+        self.window.contentPane.add(scroll_pane)
+        self.window.pack()
+        self.window.setVisible(True)
+
+    def update_box(self, event):
+        """
+        Handles the check/uncheck event for the plugin's box.
+        """
+        for plug in self.loaded_p_list:
+            if plug.get_name() == event.getActionCommand():
+                plug.enabled = not plug.enabled
+                if plug.enabled:
+                    self.update_scroll("[^] Enabled: %s" %
+                                       event.getActionCommand())
+                else:
+                    self.update_scroll("[^] Disabled: %s" %
+                                       event.getActionCommand())
+
     # ITab required functions
     @staticmethod
     def getTabCaption():
@@ -622,78 +683,6 @@ class Config(ITab):
 
     def getUiComponent(self):
         """Returns the UI component for the Burp Suite tab"""
-        return self.tab
-
-
-class Plugins(ITab):
-    """Defines the Plugins tab"""
-
-    def __init__(self, callbacks):
-        self._callbacks = callbacks
-        self.tab = JPanel(GridBagLayout())
-        self.tab_constraints = GridBagConstraints()
-        self.list_model = DefaultListModel()
-        self.plug_jlist = JList(self.list_model)
-        self.scroll_pane = JScrollPane(self.plug_jlist)
-        self.p_chex = []
-        self.plug_jlist.setLayoutOrientation(JList.VERTICAL);
-        self.plug_jlist.setVisibleRowCount(-1);
-        self.plug_jlist.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION)
-        self.scroll_pane.setPreferredSize(Dimension(600, 400));
-        self.list_plugs("/Users/ryanreid/Code/Burp/SpyDir/plugins")
-        self.tab.add(self.scroll_pane)
-
-    def list_plugs(self, folder):
-        for _, _, filenames in walk(folder):
-            for p_name in filenames:
-                if path.splitext(p_name)[1] == ".py":
-                    self.list_model.addElement(p_name)
-        self.plug_jlist.setModel(self.list_model)
-        self._callbacks.printOutput("Added the list info")
-    def load_plug(self, event):
-        self._callbacks.printOutput(str(event))
-
-    def _validate_plugin(self, p_name, f_loc):
-        """
-        Attempts to verify the manditory plugin functions to prevent broken
-        plugins from loading.
-        Generates an error message if plugin does not contain an appropriate
-        function.
-        """
-        # Load the plugin
-        try:
-            plug = load_source(p_name, f_loc)
-        # One day I'll handle this appropriately
-        except Exception as exc:
-            self.update_scroll(
-                "[!!] Error loading: %s\n\tType:%s Error: %s"
-                % (f_loc, type(exc), str(exc)))
-        # Verify the plugin's functions
-        funcs = dir(plug)
-        err = []
-        if "get_name" not in funcs:
-            err.append("get_name()")
-        if "get_ext" not in funcs:
-            err.append("get_ext()")
-        if "run" not in funcs:
-            err.append("run()")
-
-        # Report errors & return
-        if len(err) < 1:
-            return plug
-        else:
-            for issue in err:
-                self.update_scroll("[!!] %s is missing: %s func" %
-                                   (p_name, issue))
-            return None
-
-    @staticmethod
-    def getTabCaption():
-        """Returns name of tab for Burp UI"""
-        return "Plugins"
-
-    def getUiComponent(self):
-        """Returns UI component for Burp UI"""
         return self.tab
 
 
@@ -765,3 +754,25 @@ class About(ITab):
     def getUiComponent(self):
         """Returns UI component for Burp UI"""
         return self.tab
+
+
+class Plugin():
+    """Defines attributes for loaded extensions"""
+
+    def __init__(self, plugin, enabled):
+        self.plug = plugin
+        self.name = plugin.get_name()
+        self.exts = plugin.get_ext()
+        self.enabled = enabled
+
+    def run(self, lines):
+        """Runs the plugin"""
+        return self.plug.run(lines)
+
+    def get_name(self):
+        """Returns the name of the plugin"""
+        return self.name
+
+    def get_ext(self):
+        """Returns the extension of the plugin"""
+        return self.exts
