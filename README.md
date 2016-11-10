@@ -1,5 +1,11 @@
 # SpyDir
-The purpose of the SpyDir tool is to extend the functionality of BurpSuite Proxy by automating Forced Browsing. The tool attempts to enumerate application endpoints via an input directory containing the application's source code. The tool provides an option to process files as endpoints, think: ASP, PHP, HTML, or parse files to attempt to enumerate endpoints via plugins, think: MVC. Users may opt to send the discovered endpoints directly to the Burp Spider.  
+The purpose of the SpyDir tool is to extend the functionality of BurpSuite Proxy by automating Forced Browsing. The tool attempts to enumerate application endpoints via an input directory containing the application's source code. The tool provides an option to process files as endpoints, think: ASP, PHP, HTML, or parse files to attempt to enumerate endpoints via plugins, think: MVC. Users may opt to send the discovered endpoints directly to the Burp Spider.
+
+##New Features
+#Version 0.8.4
+Added the ability to consume a single text file to parse previously processed/stored endpoints. This is mostly for folks that aren't comfortable with making Python plugins but still want to use the tool. 
+
+Implemented the ability to persist the extension settings through open/close of Burp Suite.
 
 ## Plugins
 Plugin requirements:
@@ -13,7 +19,6 @@ Jython2.7+ stand-alone jar file. Get it here: http://www.jython.org/downloads.ht
 
 ## TODO
 1. Modify the plugin return type to allow the specification of HTTP method passed to the spider. (This will require a custom HTTP request and handler)
-2. Research possibility of implementing a brute-force mechanism based on language/framework. This tool may feed such a mechanism by remembering previously identified endpoints.
-3. Implement a plugin enable/disable mechanism
-4. Auto-resize window
-5. Export data
+2. Implement a plugin enable/disable mechanism
+3. Auto-resize window
+4. Export data
