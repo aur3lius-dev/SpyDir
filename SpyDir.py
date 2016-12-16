@@ -7,7 +7,8 @@ from burp import (IBurpExtender, IBurpExtenderCallbacks, ITab,
 from javax.swing import (JPanel, JTextField, GroupLayout, JTabbedPane,
                          JButton, JLabel, JScrollPane, JTextArea,
                          JFileChooser, JCheckBox, JMenuItem, JFrame, JViewport)
-from java.net import URL
+
+from java.net import URL, MalformedURLException
 from java.awt import GridLayout, GridBagLayout, GridBagConstraints, Dimension
 
 from os import walk, path
@@ -15,7 +16,7 @@ from json import loads, dumps
 from imp import load_source
 
 
-VERSION = "0.8.4"
+VERSION = "0.8.5"
 
 
 class BurpExtender(IBurpExtender, IBurpExtenderCallbacks, IContextMenuFactory):
@@ -111,7 +112,6 @@ class Config(ITab):
     def __init__(self, callbacks, parent):
         # Initialze self stuff
         self._callbacks = callbacks
-        self._helpers = callbacks.getHelpers()
         self.config = {}
         self.ext_stats = {}
         self.url_reqs = []
@@ -136,7 +136,8 @@ class Config(ITab):
         self.print_stats = True
         self.curr_conf = JLabel()
         self.window = JFrame("Select plugins",
-                             preferredSize=(200, 250), windowClosing=self.p_close)
+                             preferredSize=(200, 250),
+                             windowClosing=self.p_close)
         self.window.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE)
         self.window.setVisible(False)
 
@@ -170,7 +171,10 @@ class Config(ITab):
 
         tab_constraints.anchor = GridBagConstraints.FIRST_LINE_END
         self.tab.add(status_field, tab_constraints)
-        self._callbacks.customizeUiComponent(self.tab)
+        try:
+            self._callbacks.customizeUiComponent(self.tab)
+        except Exception:
+            pass
 
     def build_ui(self):
         """Builds the configuration screen"""
@@ -218,7 +222,6 @@ class Config(ITab):
         labels.add(save_butt)
         labels.add(rest_butt)
         labels.add(load_plug_butt)
-
         # Tool tips!
         self.delim.setToolTipText("Use to manipulate the final URL. "
                                   "See About tab for example.")
@@ -297,7 +300,7 @@ class Config(ITab):
         try:
             self._callbacks.saveExtensionSetting("config", dumps(self.config))
             self.update_scroll("[^] Settings saved!")
-        except:
+        except Exception:
             self.update_scroll("[!!] Error saving settings to Burp Suite!")
 
     def parse(self, event):
@@ -346,6 +349,7 @@ class Config(ITab):
                 item = item.replace(proto, "")
             self.url_reqs.append(proto + item.replace('//', '/'))
         self._print_parsed_status(fcount)
+        return (other_dirs, self.url_reqs)
 
     def scan(self, event):
         """
@@ -449,12 +453,13 @@ class Config(ITab):
             report = "[^] Plugins reloaded!"
         for _, _, filenames in walk(folder):
             for p_name in filenames:
-                if path.splitext(p_name)[1] == ".py":
+                n_e = path.splitext(p_name)  # n_e = name_extension
+                if n_e[1] == ".py":
                     f_loc = "%s/%s" % (folder, p_name)
-                    loaded_plug = self._validate_plugin(p_name, f_loc)
+                    loaded_plug = self._validate_plugin(n_e[0], f_loc)
                     if loaded_plug:
                         self.loaded_p_list.add(loaded_plug)
-                        if not report.startswith("[*]"):
+                        if not report.startswith("[^]"):
                             report += "%s loaded\n" % loaded_plug.get_name()
 
         self._dictify(self.loaded_p_list)
@@ -464,6 +469,7 @@ class Config(ITab):
             report = "[!!] Plugins load failure"
             self.loaded_plugins = False
         self.update_scroll(report)
+        return report
 
     def _validate_plugin(self, p_name, f_loc):
         """
@@ -527,6 +533,7 @@ class Config(ITab):
             report = ("[*] Found: %r files to be requested.\n" %
                       len(self.url_reqs))
         self.update_scroll(report)
+        return report
 
     def _plugins_missing_warning(self):
         """Prints a warning message"""
@@ -641,8 +648,7 @@ class Config(ITab):
             return
 
         scroll_pane = JScrollPane()
-        scroll_pane.setPreferredSize(Dimension(200, 250));
-        
+        scroll_pane.setPreferredSize(Dimension(200, 250))
         check_frame = JPanel(GridBagLayout())
         constraints = GridBagConstraints()
         constraints.fill = GridBagConstraints.HORIZONTAL
@@ -651,9 +657,10 @@ class Config(ITab):
 
         for plug in self.loaded_p_list:
             check_frame.add(JCheckBox(plug.get_name(), plug.enabled,
-                           actionPerformed=self.update_box), constraints)
+                                      actionPerformed=self.update_box),
+                            constraints)
             constraints.gridy += 1
-        
+
         vport = JViewport()
         vport.setView(check_frame)
         scroll_pane.setViewport(vport)
