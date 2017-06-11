@@ -18,7 +18,7 @@ Plugin requirements:
 * Have a `get_ext()` function that returns a string containing a comma delimited string of file extension type(s).
 
 ## Requirements
-Jython2.7+ stand-alone jar file. Get it here: http://www.jython.org/downloads.html
+[Jython2.7+](http://www.jython.org/downloads.html) stand-alone jar file.
 
 ## TODO
 1. Modify the plugin return type to allow the specification of HTTP method passed to the spider. (This will require a custom HTTP request and handler)
