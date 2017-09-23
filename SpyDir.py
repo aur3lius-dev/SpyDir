@@ -316,6 +316,7 @@ class Config(ITab):
         fcount = 0
         other_dirs = set()
         self.ext_stats = {}
+        proto = "http://"
         if self.loaded_plugins:
             self.update_scroll("[^] Attempting to parse files" +
                                " for URL patterns. This might take a minute.")
@@ -551,7 +552,7 @@ class Config(ITab):
     def _code_as_endpoints(self, filename, ext):
         file_set = set()
         file_url = self.config.get("URL")
-        if self.loaded_plugins:
+        if self.loaded_plugins or ext == '.txt':
             if self._ext_test(ext):
                 file_set.update(
                     self._parse_file(filename, file_url))
@@ -611,6 +612,11 @@ class Config(ITab):
         white_list_text = self.ext_white_list.getText()
         self.config["Extension Whitelist"] = white_list_text.upper().split(',')
         file_url = self.url.getText()
+        if not (file_url.startswith('https://') or file_url.startswith('http://')):
+            self.update_scroll("[!] Assuming protocol! Default value: 'http://'")
+            file_url = 'http://' + file_url
+            self.url.setText(file_url)
+
         if not file_url.endswith('/') and file_url != "":
             file_url += '/'
 
