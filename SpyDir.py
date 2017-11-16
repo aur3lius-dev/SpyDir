@@ -1,6 +1,9 @@
 """
 Module contains classes related to Burp Suite extension
 """
+from os import walk, path
+from json import loads, dumps
+from imp import load_source
 from burp import (IBurpExtender, IBurpExtenderCallbacks, ITab,
                   IContextMenuFactory)
 
@@ -11,12 +14,8 @@ from javax.swing import (JPanel, JTextField, GroupLayout, JTabbedPane,
 from java.net import URL, MalformedURLException
 from java.awt import GridLayout, GridBagLayout, GridBagConstraints, Dimension
 
-from os import walk, path
-from json import loads, dumps
-from imp import load_source
 
-
-VERSION = "0.8.5"
+VERSION = "0.8.6"
 
 
 class BurpExtender(IBurpExtender, IBurpExtenderCallbacks, IContextMenuFactory):
@@ -140,6 +139,8 @@ class Config(ITab):
                              windowClosing=self.p_close)
         self.window.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE)
         self.window.setVisible(False)
+        self.path_vars = JTextField(30)
+
 
         # Initialize local stuff
         tab_constraints = GridBagConstraints()
@@ -205,6 +206,8 @@ class Config(ITab):
         labels.add(self.ext_white_list)
         labels.add(JLabel("URL:"))
         labels.add(self.url)
+        labels.add(JLabel("Path Variables"))
+        labels.add(self.path_vars)
         # Leaving these here for now.
         # labels.add(JLabel("Cookies:"))
         # labels.add(self.cookies)
@@ -241,6 +244,9 @@ class Config(ITab):
                                  "<br/>-Ext WL<br/>-URL<br/>-Plugins")
         source_butt.setToolTipText("Select the application's "
                                    "source directory or file to parse")
+        self.path_vars.setToolTipText("Supply a JSON object with values"
+                                      "for dynamically enumerated query"
+                                      "string variables")
 
         return labels
 
@@ -316,7 +322,6 @@ class Config(ITab):
         fcount = 0
         other_dirs = set()
         self.ext_stats = {}
-        proto = "http://"
         if self.loaded_plugins:
             self.update_scroll("[^] Attempting to parse files" +
                                " for URL patterns. This might take a minute.")
@@ -328,7 +333,7 @@ class Config(ITab):
                     count = self.ext_stats.get(ext, 0) + 1
                     filename = "%s/%s" % (dirname, filename)
                     self.ext_stats.update({ext: count})
-                    if self.parse_files:
+                    if self.parse_files and self._ext_test(ext):
                         # i can haz threading?
                         file_set.update(self._code_as_endpoints(filename, ext))
                     elif self._ext_test(ext):
@@ -344,13 +349,27 @@ class Config(ITab):
             self.update_scroll("[*] Found files matching file extension in:\n")
             for other_dir in other_dirs:
                 self.update_scroll(" " * 4 + "%s\n" % other_dir)
+        self._handle_path_vars(file_set)
+        self._print_parsed_status(fcount)
+        return (other_dirs, self.url_reqs)
+
+    def _handle_path_vars(self, file_set):
+        proto = 'http://'
+        p_vars = loads(str(self.path_vars.getText()))
+        rep_str = ""
+        for k in p_vars.keys():
+            rep_str += "[^] Replacing %s with %s!\n" % (k, str(p_vars.get(k)))
+
+        self.update_scroll(rep_str)
         for item in file_set:
             if item.startswith("http://") or item.startswith("https://"):
                 proto = item.split("//")[0] + '//'
                 item = item.replace(proto, "")
+            for k in p_vars.keys():
+                if str(k) in item:
+                    item = item.replace(k, str(p_vars.get(k)))
             self.url_reqs.append(proto + item.replace('//', '/'))
-        self._print_parsed_status(fcount)
-        return (other_dirs, self.url_reqs)
+
 
     def scan(self, event):
         """
@@ -382,7 +401,7 @@ class Config(ITab):
         req_str = ""
         if len(self.url_reqs) > 0:
             self.update_scroll("[*] Printing all discovered endpoints:")
-            for req in self.url_reqs:
+            for req in sorted(self.url_reqs):
                 req_str += "    %s\n" % req
         else:
             req_str = "[!!] No endpoints discovered"
@@ -417,7 +436,7 @@ class Config(ITab):
         with open(filename, 'r') as plug_in:
             lines = plug_in.readlines()
         ext = path.splitext(filename)[1].upper()
-        if ext in self.plugins.keys():
+        if ext in self.plugins.keys() and self._ext_test(ext):
             for plug in self.plugins.get(ext):
                 if plug.enabled:
                     res = plug.run(lines)
@@ -459,6 +478,9 @@ class Config(ITab):
                     f_loc = "%s/%s" % (folder, p_name)
                     loaded_plug = self._validate_plugin(n_e[0], f_loc)
                     if loaded_plug:
+                        for p in self.loaded_p_list:
+                            if p.get_name() == loaded_plug.get_name():
+                                self.loaded_p_list.discard(p)
                         self.loaded_p_list.add(loaded_plug)
                         if not report.startswith("[^]"):
                             report += "%s loaded\n" % loaded_plug.get_name()
@@ -499,11 +521,10 @@ class Config(ITab):
         # Report errors & return
         if len(err) < 1:
             return Plugin(plug, True)
-        else:
-            for issue in err:
-                self.update_scroll("[!!] %s is missing: %s func" %
-                                   (p_name, issue))
-            return None
+        for issue in err:
+            self.update_scroll("[!!] %s is missing: %s func" %
+                               (p_name, issue))
+        return None
 
     def _dictify(self, plist):
         """Converts the list of loaded plugins (plist) into a dictionary"""
@@ -596,12 +617,12 @@ class Config(ITab):
     def _ext_test(self, ext):
         """Litmus test for extension whitelist"""
         val = False
-        if len(self.config.get("Extension Whitelist")) > 0:
+        if "*" in self.config.get("Extension Whitelist"):
+            val = True
+        else:
             val = (len(ext) > 0 and
                    (ext.strip().upper()
                     in self.config.get("Extension Whitelist")))
-        elif "*" in self.config.get("Extension Whitelist"):
-            val = True
         return val
 
     def _update(self):
@@ -747,7 +768,13 @@ class About(ITab):
         subfolder, 'views', with static .html files.<br/>
         In this case the String Delimiter will need to equal 'TestApp'.
         <br/>With the expectation that the tool will produce an example URL
-        will such as:<br/>https://localhost:8080/views/view1.html.<br/>
+        will such as:<br/>https://localhost:8080/views/view1.html.<br/><br/>
+        <b>Path Vars</b><br/>Use this option to swap values for dynamically
+        enumerated query string parameters. This needs to be a JSON object.
+        <br/><b>Example:</b>{"{userID}": "aur3lius", "admin_status=": 
+        "admin_status=True"}<br/><br/>
+
+
         <b>Note:</b> String Delimiter is ignored if parsing files using
         plugins!
         </html>"""

@@ -9,15 +9,17 @@ from random import randint
 
 
 class Status():
-
+    """Sample class to parse HTTP method"""
     def __init__(self):
+        """Init"""
         self.last_lines = []
         self.handle_method = False
 
     def handle_http_method(self):
+        """find http method"""
         http_meth = ""
         if self.handle_method:
-            for prev_line in last_lines:
+            for prev_line in self.last_lines:
                 if "HttpPost" in prev_line:
                     http_meth = "POST"
                     break
@@ -59,6 +61,7 @@ def param_parse(params):
     return results
 
 def get_ext():
+    """returns the extensions associated with this plugin"""
     return ".cs"
 
 def run(filename):
@@ -68,12 +71,11 @@ def run(filename):
     Returns a list of endpoints
     """
     run_results = []
-    cont_rule = "((\s:\s){1}(.)*Controller)"
     url = None
     cont = None
     # location isn't currently used
     location = ""
-    prog = re.compile(cont_rule, flags=re.IGNORECASE)
+    prog = re.compile(r"((\s:\s){1}(.)*Controller)", flags=re.IGNORECASE)
     stats = Status()
 
     for line in filename:
@@ -96,15 +98,15 @@ def run(filename):
                 else:
                     url = "%s/%s/%s\t%s" % (location,
                                             cont, action_point, http_meth)
-                last_lines = []
             if url is not None:
                 run_results.append(url.strip())
                 url = None
         except Exception as e:
-            raise e
+            # Print the offending line the BurpSuite's extension Output tab
+            print("Error! Couldn't parse: %s" % line)
     return run_results
 
 
 def get_name():
-    # MUST HAVE FUNCTION! Returns plugin name.
+    """MUST HAVE FUNCTION! Returns plugin name."""
     return "ASP.NET MVC"
