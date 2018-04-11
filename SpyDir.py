@@ -15,7 +15,7 @@ from java.net import URL, MalformedURLException
 from java.awt import GridLayout, GridBagLayout, GridBagConstraints, Dimension
 
 
-VERSION = "0.8.6"
+VERSION = "0.8.7"
 
 
 class BurpExtender(IBurpExtender, IBurpExtenderCallbacks, IContextMenuFactory):
@@ -302,7 +302,6 @@ class Config(ITab):
                 self.update_scroll("[!!] URL provided is NOT in Burp Scope!")
         except MalformedURLException:  # If url field is blank we'll
             pass                       # still save the settings.
-
         try:
             self._callbacks.saveExtensionSetting("config", dumps(self.config))
             self.update_scroll("[^] Settings saved!")
@@ -355,22 +354,34 @@ class Config(ITab):
 
     def _handle_path_vars(self, file_set):
         proto = 'http://'
-        p_vars = loads(str(self.path_vars.getText()))
-        rep_str = ""
-        for k in p_vars.keys():
-            rep_str += "[^] Replacing %s with %s!\n" % (k, str(p_vars.get(k)))
-
-        self.update_scroll(rep_str)
         for item in file_set:
             if item.startswith("http://") or item.startswith("https://"):
                 proto = item.split("//")[0] + '//'
                 item = item.replace(proto, "")
-            for k in p_vars.keys():
-                if str(k) in item:
-                    item = item.replace(k, str(p_vars.get(k)))
+                item = self._path_vars(item)
             self.url_reqs.append(proto + item.replace('//', '/'))
 
-
+    def _path_vars(self, item):
+        p_vars = None
+        if self.path_vars.getText():
+            try:
+                p_vars = loads(str(self.path_vars.getText()))
+            except:
+                self.update_scroll("[!] Error reading supplied Path Variables!")
+        if p_vars is not None:
+            rep_str = ""
+            try:
+                for k in p_vars.keys():
+                    rep_str += "[^] Replacing %s with %s!\n" % (k, str(p_vars.get(k)))
+                self.update_scroll(rep_str)
+                for k in p_vars.keys():
+                    if str(k) in item:
+                        item = item.replace(k, str(p_vars.get(k)))
+            except AttributeError:
+                self.update_scroll("[!] Error reading supplied Path Variables! This needs to be a JSON dictionary!")
+        return item
+            
+            
     def scan(self, event):
         """
         handles the click event from the UI.

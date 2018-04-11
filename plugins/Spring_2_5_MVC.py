@@ -31,12 +31,11 @@ def set_param_vals():
         "{Long}": 9012310231013
     }
 
-
 def handle_params(params):
     assignment = ""
-    reg = '(.*"\))([\s])(.*)(,|\))'
+    reg = re.compile('(.*?"\))([\s])(.*?)(,|\))')
     for par in params:
-        par_find = re.search(reg, par)
+        par_find = reg.search(par)
         if par_find:
             par_name = par_find.group(1).replace('"', "").replace(")", "")
             par_type = par_find.group(3).split()[0].strip()
@@ -67,8 +66,8 @@ def run(filename):
         process Spring 2.5+ MVC Routes
     """
     req_map = "@RequestMapping("
-    route_rule = "(value\s*=\s*)([\"].*[\"])(,|\))|([\"].*[\"])"
-    path_rule = "({\w+})"
+    route_rule = re.compile("(value\s*=\s*[{]?)([\"].*[\"])(,|\))|([\"].*[\"])")
+    path_rule = re.compile("({\w+})")
     req_param = "@RequestParam(\""
 
     route_list = []
@@ -79,15 +78,20 @@ def run(filename):
             route = None
             if req_map in line:
                 line = line.replace(req_map, "").replace(")", "")
-                val_find = re.search(route_rule, line)
+                val_find = route_rule.search(line)
                 if val_find:
                     if val_find.group(2) is not None:
                         route = val_find.group(2).replace(
                             "\"", "").strip().split(',')[0]
                     elif val_find.group(4) is not None:
                         route = val_find.group(4).replace("\"", "").strip()
+                        if ',' in val_find.group(4):
+                            for r in val_find.group(4).split(','):
+                                r = r.strip().replace('"', '')
+                                route_list.append(r)
+                            route = r
                 if route is not None:
-                    path_finder = re.search(path_rule, route)
+                    path_finder = path_rule.search(route)
                     if path_finder:
                         route = handle_path_vars(route)
                     route_list.append(route)
